@@ -284,7 +284,7 @@ function newRun(){
     iframe:0,orbitAng:0,
     weapons:{bolt:1},passives:{},
     timers:{bolt:0,nova:0,spawn:1.2},
-    enemies:[],bolts:[],orbs:[],coins:[],
+    enemies:[],bolts:[],orbs:[],coinDrops:[],
     over:false};
 }
 
@@ -329,8 +329,8 @@ function spawnEnemy(type){
 }
 function director(dt){
   ST.timers.spawn-=dt;const m=ST.t/60;
-  if(ST.timers.spawn<=0){ST.timers.spawn=Math.max(.34,1.7-m*.22);
-    const n=1+Math.floor(m*.6);
+  if(ST.timers.spawn<=0){ST.timers.spawn=Math.max(.28,1.4-m*.2);
+    const n=2+Math.floor(m*1.1);
     for(let i=0;i<n;i++){const r=Math.random();let t='grub';
       if(m>1&&r<.24)t='dart';else if(m>2.2&&r<.42)t='brute';
       spawnEnemy(t);}}
@@ -349,8 +349,8 @@ function killEnemy(e){
   // xp orb
   const om=take(orbMeshes);if(om){om.position.set(e.x,.8,e.z);ST.orbs.push({mesh:om,x:e.x,z:e.z,v:e.xp,pull:0});}
   const dr=Math.random();
-  if(e.type==='brute'){for(let i=0;i<5;i++){const cm=take(coinMeshes);if(cm){const cx=e.x+rand(-2,2),cz=e.z+rand(-2,2);cm.position.set(cx,.5,cz);ST.coins.push({mesh:cm,x:cx,z:cz});}}}
-  else if(dr<.14){const cm=take(coinMeshes);if(cm){cm.position.set(e.x,.5,e.z);ST.coins.push({mesh:cm,x:e.x,z:e.z});}}
+  if(e.type==='brute'){for(let i=0;i<5;i++){const cm=take(coinMeshes);if(cm){const cx=e.x+rand(-2,2),cz=e.z+rand(-2,2);cm.position.set(cx,.5,cz);ST.coinDrops.push({mesh:cm,x:cx,z:cz});}}}
+  else if(dr<.14){const cm=take(coinMeshes);if(cm){cm.position.set(e.x,.5,e.z);ST.coinDrops.push({mesh:cm,x:e.x,z:e.z});}}
 }
 
 /* ---------- weapons fire ---------- */
@@ -442,11 +442,11 @@ function update(dt){
   ST.orbs=ST.orbs.filter(o=>{if(!o.got)return true;o.mesh.visible=false;return false;});
 
   // coins
-  for(const c of ST.coins){const dx=ST.px-c.x,dz=ST.pz-c.z,d2=dx*dx+dz*dz;
+  for(const c of ST.coinDrops){const dx=ST.px-c.x,dz=ST.pz-c.z,d2=dx*dx+dz*dz;
     c.mesh.rotation.z+=dt*4;
     if(d2<mag2*1.6){const d=Math.sqrt(d2)||1;c.x+=dx/d*14*dt;c.z+=dz/d*14*dt;c.mesh.position.x=c.x;c.mesh.position.z=c.z;
-      if(d<1.6){c.got=true;ST.coins2=(ST.coins2||0);ST.coins++;sfx.coin();}}}
-  ST.coins=ST.coins.filter(c=>{if(!c.got)return true;c.mesh.visible=false;return false;});
+      if(d<1.6){c.got=true;ST.coins++;sfx.coin();}}}
+  ST.coinDrops=ST.coinDrops.filter(c=>{if(!c.got)return true;c.mesh.visible=false;return false;});
 
   // nova fx
   if(novaFx.t>0){novaFx.t-=dt;const p=1-novaFx.t/novaFx.max;const r=novaFx.r*p;
