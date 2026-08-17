@@ -489,7 +489,7 @@ const boltMeshes=poolMesh(geoBolt,matBolt,80,false);
 const orbMeshes=poolMesh(geoOrb,matOrb,300,false);
 const coinMeshes=poolMesh(geoCoin,matCoin,70,false);
 const bladeMeshes=poolMesh(geoBlade,matBlade,6,false);
-const take=arr=>{for(const m of arr)if(!m.visible)return m;return null;};
+const take=arr=>{for(const m of arr)if(!m.visible){m.visible=true;return m;}return null;};
 
 /* player */
 const player=new THREE.Group();
@@ -570,7 +570,7 @@ function newRun(){
     px:0,pz:0,iframe:0,orbitAng:0,shake:0,pendingLU:0,
     speed:15*(1+.04*fr('swift')),dmgMul:1+.06*fr('pow'),cdMul:1,magnet:6*(1+.18*fr('mag')),
     regen:.3*fr('mend'),crit:.05,greed:1+.15*fr('greed'),hitFlash:0,
-    weapons:{bolt:1},passives:{},timers:{bolt:0,nova:0,spawn:1.0},
+    weapons:{bolt:1},passives:{},timers:{bolt:0,nova:0,spawn:1.5},
     enemies:[],bolts:[],orbs:[],coinDrops:[],over:false};
 }
 function applyPassives(){const p=ST.passives;
@@ -597,8 +597,8 @@ function spawnEnemy(type){
 }
 function director(dt){
   ST.timers.spawn-=dt;const m=ST.t/60;
-  if(ST.timers.spawn<=0&&ST.enemies.length<MAXE){ST.timers.spawn=Math.max(.28,1.4-m*.2);
-    const n=Math.min(MAXE-ST.enemies.length,2+Math.floor(m*1.1));
+  if(ST.timers.spawn<=0&&ST.enemies.length<MAXE){ST.timers.spawn=Math.max(.45,2.0-m*.18);
+    const n=Math.min(MAXE-ST.enemies.length,1+Math.floor(m*0.8));
     for(let i=0;i<n;i++){const r=Math.random();let t='grub';
       if(m>1&&r<.24)t='dart';else if(m>2.2&&r<.42)t='brute';spawnEnemy(t);}}
 }
