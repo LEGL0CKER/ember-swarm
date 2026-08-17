@@ -419,6 +419,8 @@
 </script>
 <script type="module">
 import * as THREE from 'three';
+import { GLTFLoader } from '/vendor/GLTFLoader.js';
+import { clone as skeletonClone } from '/vendor/SkeletonUtils.js';
 
 /* ============ helpers ============ */
 const $=id=>document.getElementById(id);
@@ -657,6 +659,7 @@ function buildEnemy(type){
   }
   g.userData.hpbar=makeHpBar(w);
   addLabel(g.userData.hpbar,type);
+  graftModel(g,type);
   scene.add(g);return g;
 }
 // cat: small|elite|boss · from: seconds before it can appear · behavior drives AI
@@ -690,12 +693,34 @@ function addLabel(hpbar,type){const big=ETYPE[type].cat==='boss';const lh=big?1.
   const lab=new THREE.Mesh(geoBar,new THREE.MeshBasicMaterial({map:labelTex(type),transparent:true,depthTest:false,toneMapped:false}));
   lab.scale.set(lh*asp,lh,1);lab.position.y=big?1.2:0.64;lab.renderOrder=1000;hpbar.add(lab);}
 const MAXE=isMobile?46:80; // hard cap on concurrent enemies
+/* ---- real 3D monster models (Quaternius, CC0) ---- */
+const MODEL_MAP={grub:'Frog',dart:'Fish',stinger:'Birb',wraith:'BlueDemon',brute:'Orc',hive:'Cactoro',charger:'Dino',spitter:'Alien',boss:'Demon',golem:'Yeti',colossus:'MushroomKing',overlord:'Orc_Skull'};
+const MODELS={};const MODELINFO={};
+function loadModels(){const loader=new GLTFLoader();const names=[...new Set(Object.values(MODEL_MAP))];
+  return Promise.all(names.map(n=>loader.loadAsync('/models/'+n+'.glb')
+    .then(g=>{MODELS[n]={scene:g.scene,animations:g.animations};})
+    .catch(e=>{console.warn('model load failed',n,e);})))
+  .then(()=>{for(const type in MODEL_MAP){const M=MODELS[MODEL_MAP[type]];if(!M)continue;
+    const box=new THREE.Box3().setFromObject(M.scene),h=Math.max(.001,box.max.y-box.min.y);
+    const target=ETYPE[type].r*2.4;
+    MODELINFO[type]={scale:target/h,headY:target*1.05+(ETYPE[type].cat==='boss'?1.4:0.7),faceOff:Math.PI,
+      clip:ETYPE[type].cat==='boss'?'Walk':'Run'};}});}
+function graftModel(g,type){const mi=MODELINFO[type],M=mi&&MODELS[MODEL_MAP[type]];if(!M)return;
+  const inst=skeletonClone(M.scene);inst.scale.setScalar(mi.scale);inst.position.y=0;
+  inst.traverse(o=>{if(o.isMesh){o.castShadow=false;o.frustumCulled=false;}});
+  for(const c of g.children)c.visible=false; // hide procedural fallback body
+  g.add(inst);
+  const mixer=new THREE.AnimationMixer(inst);
+  const clip=M.animations.find(a=>a.name===mi.clip)||M.animations.find(a=>/run|walk|idle/i.test(a.name))||M.animations[0];
+  if(clip){const act=mixer.clipAction(clip);act.play();act.time=Math.random()*(clip.duration||1);}
+  g.userData.model=inst;g.userData.mixer=mixer;}
 function poolBuild(type,n){const a=[];for(let i=0;i<n;i++)a.push(buildEnemy(type));return a;}
-const enemyPool={
-  grub:poolBuild('grub',40),dart:poolBuild('dart',22),stinger:poolBuild('stinger',20),wraith:poolBuild('wraith',20),
-  brute:poolBuild('brute',14),hive:poolBuild('hive',10),charger:poolBuild('charger',10),spitter:poolBuild('spitter',10),
-  boss:poolBuild('boss',4),golem:poolBuild('golem',4),colossus:poolBuild('colossus',3),overlord:poolBuild('overlord',2),
-};
+let enemyPool={};
+function initEnemyPools(){enemyPool={
+  grub:poolBuild('grub',24),dart:poolBuild('dart',14),stinger:poolBuild('stinger',16),wraith:poolBuild('wraith',16),
+  brute:poolBuild('brute',10),hive:poolBuild('hive',8),charger:poolBuild('charger',8),spitter:poolBuild('spitter',8),
+  boss:poolBuild('boss',3),golem:poolBuild('golem',3),colossus:poolBuild('colossus',2),overlord:poolBuild('overlord',2),
+};}
 function poolMesh(geo,mat,n,cast){const a=[];for(let i=0;i<n;i++){const m=new THREE.Mesh(geo,mat);m.visible=false;m.castShadow=!!cast&&!isMobile;scene.add(m);a.push(m);}return a;}
 const geoEbullet=new THREE.SphereGeometry(0.5,10,10);
 const matEbullet=new THREE.MeshStandardMaterial({color:0xC58BFF,emissive:0xB07BFF,emissiveIntensity:2.4,roughness:.4});
@@ -987,17 +1012,24 @@ function update(dt){
     if(beh==='overlord'){e.shootCd-=dt;if(e.shootCd<=0&&d<52){e.shootCd=1.3;const a0=Math.atan2(nz,nx);for(let s=-1;s<=1;s++){const a=a0+s*.32;fireEbullet(e,Math.cos(a),Math.sin(a));}}}
     e.x=clamp(e.x,-ARENA,ARENA);e.z=clamp(e.z,-ARENA,ARENA);
     const g=e.g,ud=g.userData;
-    g.rotation.y=Math.atan2(dx,dz);
-    if(e.type==='grub'){const hop=Math.abs(Math.sin(e.ph*1.3));g.position.set(e.x,e.y+hop*.5,e.z);
-      ud.body.scale.set(1+(1-hop)*.12,1-(1-hop)*.18+hop*.1,1+(1-hop)*.12);}
-    else if(cone(e.type)){g.position.set(e.x,e.y+(e.dashT>0?.3:0),e.z);g.rotation.x=Math.PI/2;g.rotation.z=Math.sin(e.ph*2)*.3;}
-    else{const big=ETYPE[e.type].cat==='boss';
-      g.position.set(e.x,e.y+Math.sin(e.ph*(big?.5:.9))*(big?.4:.22),e.z);
-      if(ud.shards)ud.shards.rotation.y+=dt*(big?1.0:1.6);
-      if(ud.core)ud.core.scale.setScalar(1+Math.sin(e.ph*(big?1.2:2))*.12);}
+    if(ud.model){ // real animated monster model
+      g.rotation.set(0,Math.atan2(dx,dz)+(MODELINFO[e.type].faceOff||0),0);
+      g.position.set(e.x,0,e.z);
+      if(ud.mixer)ud.mixer.update(dt*(e.dashT>0?2:1));
+    }else{
+      g.rotation.y=Math.atan2(dx,dz);
+      if(e.type==='grub'){const hop=Math.abs(Math.sin(e.ph*1.3));g.position.set(e.x,e.y+hop*.5,e.z);
+        ud.body.scale.set(1+(1-hop)*.12,1-(1-hop)*.18+hop*.1,1+(1-hop)*.12);}
+      else if(cone(e.type)){g.position.set(e.x,e.y+(e.dashT>0?.3:0),e.z);g.rotation.x=Math.PI/2;g.rotation.z=Math.sin(e.ph*2)*.3;}
+      else{const big=ETYPE[e.type].cat==='boss';
+        g.position.set(e.x,e.y+Math.sin(e.ph*(big?.5:.9))*(big?.4:.22),e.z);
+        if(ud.shards)ud.shards.rotation.y+=dt*(big?1.0:1.6);
+        if(ud.core)ud.core.scale.setScalar(1+Math.sin(e.ph*(big?1.2:2))*.12);}
+    }
     // health bar (billboarded, over everything)
     const hb=ud.hpbar,frac=Math.max(0,e.hp/e.maxhp),w=hb.userData.w;
-    hb.position.set(e.x,e.y+e.r+(ETYPE[e.type].cat==='boss'?1.7:0.85),e.z);
+    const barY=ud.model?(MODELINFO[e.type].headY):(e.y+e.r+(ETYPE[e.type].cat==='boss'?1.7:0.85));
+    hb.position.set(e.x,barY,e.z);
     hb.quaternion.copy(camera.quaternion);
     const fill=hb.userData.fill;fill.scale.x=Math.max(.0001,w*frac);fill.position.x=-(w*(1-frac))/2;
     e.hitCd-=dt;
@@ -1231,10 +1263,11 @@ if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch
 
 /* boot */
 camera.position.set(0,30,40);camera.lookAt(0,1,0);
-$('loading').classList.add('hidden');
-ensureMissions();checkAchievements();
-setState('home');
-if(dailyAvailable()&&SAVE.bestTime>0)setTimeout(openDaily,500);
+ensureMissions();
+const _ll=$('loading').querySelector('.l');if(_ll)_ll.textContent='SUMMONING MONSTERS…';
+function finishBoot(){initEnemyPools();checkAchievements();$('loading').classList.add('hidden');setState('home');
+  if(dailyAvailable()&&SAVE.bestTime>0)setTimeout(openDaily,500);}
+loadModels().then(finishBoot).catch(e=>{console.error('boot load error',e);finishBoot();});
 
 /* test hooks */
 window.__ST=()=>ST;window.__state=()=>state;window.__startRun=startRun;window.__update=update;window.__keys=keys;window.__SAVE=()=>SAVE;window.__setState=setState;
