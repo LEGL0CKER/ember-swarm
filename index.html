@@ -12,14 +12,19 @@
 <link rel="apple-touch-icon" href="/icon.svg">
 <title>Ember Swarm</title>
 <style>
+  @font-face{font-family:'Chakra Petch';font-weight:600;font-display:swap;src:url('/fonts/chakra-600.woff2') format('woff2')}
+  @font-face{font-family:'Chakra Petch';font-weight:700;font-display:swap;src:url('/fonts/chakra-700.woff2') format('woff2')}
+  @font-face{font-family:'Barlow';font-weight:400;font-display:swap;src:url('/fonts/barlow-400.woff2') format('woff2')}
+  @font-face{font-family:'Barlow';font-weight:500;font-display:swap;src:url('/fonts/barlow-500.woff2') format('woff2')}
+  @font-face{font-family:'Barlow';font-weight:600;font-display:swap;src:url('/fonts/barlow-600.woff2') format('woff2')}
   :root{
     --bg:#090A11; --bg-2:#0E1019; --panel:#151827; --panel-2:#1C2033; --line:#282D45; --line-2:#343A57;
     --ink:#ECE7DA; --muted:#8A8FA8; --muted-2:#5D6180;
     --amber:#FFB13D; --amber-d:#E08A1E; --red:#FF4F66; --teal:#3FE0C5; --gold:#FFD76A; --violet:#9D5CFF;
     --r:14px; --r-sm:10px;
-    --sans:'Space Grotesk',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
-    --cond:'Barlow Condensed','Avenir Next Condensed','Arial Narrow',var(--sans);
-    --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+    --sans:'Barlow',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+    --cond:'Chakra Petch','Barlow',ui-sans-serif,system-ui,sans-serif;
+    --mono:'Chakra Petch',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
     --safe-t:env(safe-area-inset-top); --safe-b:env(safe-area-inset-bottom);
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -80,6 +85,9 @@
     background:radial-gradient(1100px 640px at 50% -8%,rgba(255,177,61,.10),transparent 55%),
                linear-gradient(180deg,var(--bg-2),var(--bg));
     padding:calc(16px + var(--safe-t)) 0 calc(16px + var(--safe-b))}
+  #home{background:
+    radial-gradient(1000px 560px at 50% 2%,rgba(255,177,61,.12),transparent 55%),
+    linear-gradient(180deg,rgba(9,10,17,.22) 0%,rgba(9,10,17,.62) 50%,rgba(9,10,17,.9) 100%)}
   .hidden{display:none!important}
   .appbar{display:flex;align-items:center;justify-content:space-between;padding:4px 20px 0;flex:0 0 auto}
   .brand{display:flex;align-items:center;gap:10px}
@@ -481,7 +489,7 @@ const ETYPE={
   dart:{r:0.7,hp:12,spd:10.5,dmg:7,xp:1,y:0.95},
   brute:{r:1.9,hp:100,spd:3.6,dmg:17,xp:3,y:1.95},
 };
-const MAXE=isMobile?58:88;
+const MAXE=isMobile?42:72; // hard cap on concurrent enemies
 function poolBuild(type,n){const a=[];for(let i=0;i<n;i++)a.push(buildEnemy(type));return a;}
 const enemyPool={grub:poolBuild('grub',70),dart:poolBuild('dart',44),brute:poolBuild('brute',24)};
 function poolMesh(geo,mat,n,cast){const a=[];for(let i=0;i<n;i++){const m=new THREE.Mesh(geo,mat);m.visible=false;m.castShadow=!!cast&&!isMobile;scene.add(m);a.push(m);}return a;}
@@ -521,7 +529,12 @@ scene.add(points);
 const parts=[];for(let i=0;i<PN;i++)parts.push({life:0,x:0,y:0,z:0,vx:0,vy:0,vz:0,r:1,g:1,b:1});
 function spawnParts(x,y,z,col,n){const c=new THREE.Color(col);
   for(let k=0;k<n;k++){const p=parts.find(p=>p.life<=0);if(!p)break;const a=Math.random()*TAU,el=rand(-.4,1),sp=rand(3,13);
-    p.life=p.max=rand(.3,.7);p.x=x;p.y=y;p.z=z;p.vx=Math.cos(a)*sp;p.vy=el*sp*.7+4;p.vz=Math.sin(a)*sp;p.r=c.r;p.g=c.g;p.b=c.b;}}
+    p.life=p.max=rand(.3,.7);p.x=x;p.y=y;p.z=z;p.vx=Math.cos(a)*sp;p.vy=el*sp*.7+4;p.vz=Math.sin(a)*sp;p.grav=14;p.r=c.r;p.g=c.g;p.b=c.b;}}
+function stepParticles(dt){let pi=0;for(const p of parts){if(p.life>0){p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.vy-=(p.grav||14)*dt;p.vx*=.95;p.vz*=.95;
+    pPos[pi*3]=p.x;pPos[pi*3+1]=p.y;pPos[pi*3+2]=p.z;const a=Math.max(0,Math.min(1,p.life/p.max));
+    pCol[pi*3]=p.r*a;pCol[pi*3+1]=p.g*a;pCol[pi*3+2]=p.b*a;pi++;}}
+  for(let k=pi;k<PN;k++)pPos[k*3+1]=-999;
+  pGeo.attributes.position.needsUpdate=true;pGeo.attributes.color.needsUpdate=true;}
 
 /* ============ floating damage numbers ============ */
 const dmgLayer=$('dmglayer');const DNPOOL=[];
@@ -721,11 +734,7 @@ function update(dt){
     novaRing.scale.set(r,r,r);novaRing.position.set(ST.px,.4,ST.pz);novaRing.material.opacity=(1-p)*.8;}
   else novaRing.material.opacity=0;
 
-  let pi=0;for(const p of parts){if(p.life>0){p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.vy-=14*dt;p.vx*=.94;p.vz*=.94;
-    pPos[pi*3]=p.x;pPos[pi*3+1]=p.y;pPos[pi*3+2]=p.z;const a=Math.max(0,p.life/p.max);
-    pCol[pi*3]=p.r*a;pCol[pi*3+1]=p.g*a;pCol[pi*3+2]=p.b*a;pi++;}}
-  for(let k=pi;k<PN;k++)pPos[k*3+1]=-999;
-  pGeo.attributes.position.needsUpdate=true;pGeo.attributes.color.needsUpdate=true;
+  stepParticles(dt);
 
   tmpV.set(ST.px,0,ST.pz).add(CAM_OFF);
   if(ST.shake>0){tmpV.x+=rand(-1,1)*ST.shake;tmpV.z+=rand(-1,1)*ST.shake;ST.shake=Math.max(0,ST.shake-dt*1.6);}
@@ -787,7 +796,7 @@ function setState(s){state=s;
   $('gameover').classList.toggle('hidden',s!=='over');
   if(s==='pause'){const parts=[];for(const id in ST.weapons)parts.push(WEAPONS[id].name+' '+ST.weapons[id]);
     for(const id in ST.passives)parts.push(PASSIVES[id].name+' '+ST.passives[id]);$('pauseBuild').textContent=parts.join(' · ');}
-  if(s==='home')renderHome();if(s==='skins')renderSkins();if(s==='forge')renderForge();
+  if(s==='home'){clearScene();renderHome();}if(s==='skins')renderSkins();if(s==='forge')renderForge();
   syncWallets();
 }
 function syncWallets(){const v=Math.floor(SAVE.coins);['walletHome','walletSkins','walletForge'].forEach(id=>{const el=$(id);if(el)el.textContent=v;});}
@@ -868,10 +877,23 @@ $('btnDaily').onclick=openDaily;
 document.querySelectorAll('[data-back]').forEach(b=>b.onclick=()=>setState('home'));
 $('btnResume').onclick=()=>setState('run');$('btnQuit').onclick=()=>endRun();
 
+/* ============ ambient home scene ============ */
+let idleT=0;
+function idleUpdate(dt){idleT+=dt;
+  player.position.set(0,1.7+Math.sin(idleT*1.4)*.16,0);
+  pcore.rotation.y+=dt*.5;pcore.rotation.x+=dt*.25;pshell.rotation.y-=dt*.35;pshell.scale.setScalar(1+Math.sin(idleT*2)*.03);
+  emberLight.position.set(0,2.6,0);
+  const a=idleT*0.09;camera.position.set(Math.sin(a)*30,24,Math.cos(a)*30+7);camera.lookAt(0,1.6,0);
+  if(Math.random()<.7){const p=parts.find(p=>p.life<=0);if(p){const c=new THREE.Color(skinById(SAVE.skin).emis);
+    p.life=p.max=rand(1.4,2.8);p.x=rand(-7,7);p.y=rand(0,1);p.z=rand(-7,7);p.vx=rand(-.4,.4);p.vy=rand(1.6,3.2);p.vz=rand(-.4,.4);p.grav=1.1;p.r=c.r;p.g=c.g;p.b=c.b;}}
+  stepParticles(dt);}
+
 /* ============ main loop ============ */
 let last=performance.now();
 function loop(now){requestAnimationFrame(loop);let dt=(now-last)/1000;last=now;if(dt>.05)dt=.05;
-  if(state==='run'&&ST&&!ST.over)update(dt);renderer.render(scene,camera);}
+  if(state==='run'&&ST&&!ST.over)update(dt);
+  else if(state==='home')idleUpdate(dt);
+  renderer.render(scene,camera);}
 requestAnimationFrame(loop);
 
 /* PWA */
