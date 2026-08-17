@@ -1,0 +1,14 @@
+{
+  "name": "Ember Swarm",
+  "short_name": "Ember Swarm",
+  "description": "An endless 3D arena survival game. Outlive the swarm, build your arsenal, feed the forge.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#0A0B12",
+  "theme_color": "#0A0B12",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
