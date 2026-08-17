@@ -604,6 +604,14 @@ function director(dt){
 }
 function nearest(x,z,maxR){let best=null,bd=(maxR||1e9)**2;
   for(const e of ST.enemies){const dx=x-e.x,dz=z-e.z,d=dx*dx+dz*dz;if(d<bd){bd=d;best=e;}}return best;}
+// nearest enemy that is actually inside the camera frame (on-screen)
+const _proj=new THREE.Vector3();
+function nearestVisible(x,z,maxR){let best=null,bd=(maxR||1e9)**2;
+  for(const e of ST.enemies){
+    _proj.set(e.x,e.y,e.z).project(camera);
+    if(_proj.z>=1||Math.abs(_proj.x)>1.05||Math.abs(_proj.y)>1.08)continue; // off-screen / behind camera
+    const dx=x-e.x,dz=z-e.z,d=dx*dx+dz*dz;if(d<bd){bd=d;best=e;}}
+  return best;}
 function hurtEnemy(e,dmg,crit){
   if(crit===undefined)crit=Math.random()<ST.crit;
   const dealt=dmg*ST.dmgMul*(crit?2:1);e.hp-=dealt;
@@ -622,7 +630,7 @@ function killEnemy(e){
 /* ============ weapons ============ */
 function fire(dt){const T=ST.timers,W=ST.weapons;
   if(W.bolt){const s=WEAPONS.bolt.stat(W.bolt);T.bolt-=dt;
-    if(T.bolt<=0){const tgt=nearest(ST.px,ST.pz,62);if(tgt){T.bolt=s.cd*ST.cdMul;
+    if(T.bolt<=0){const tgt=nearestVisible(ST.px,ST.pz,200);if(tgt){T.bolt=s.cd*ST.cdMul;
       const base=Math.atan2(tgt.z-ST.pz,tgt.x-ST.px);
       for(let i=0;i<s.count;i++){const a=base+(i-(s.count-1)/2)*.16;const bm=take(boltMeshes);if(!bm)break;
         bm.visible=true;bm.position.set(ST.px,1.2,ST.pz);
