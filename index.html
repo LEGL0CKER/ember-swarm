@@ -219,7 +219,62 @@
     border:1px solid rgba(236,231,218,.18);background:radial-gradient(circle,rgba(255,255,255,.03),transparent 70%)}
   #joyK{position:absolute;width:52px;height:52px;border-radius:50%;left:37px;top:37px;
     background:radial-gradient(circle at 40% 38%,rgba(255,201,100,.7),rgba(255,177,61,.4));box-shadow:0 0 18px rgba(255,177,61,.4)}
-  @media (prefers-reduced-motion:reduce){.spin,.pop{animation:none}}
+  /* screen + modal transitions */
+  @keyframes scrIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+  @keyframes modIn{from{opacity:0;transform:scale(.93) translateY(6px)}to{opacity:1;transform:none}}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+  .screen:not(.hidden){animation:scrIn .32s cubic-bezier(.2,.9,.3,1) both}
+  .overlay:not(.hidden){animation:fadeIn .2s ease both}
+  .overlay:not(.hidden) .modal{animation:modIn .3s cubic-bezier(.2,1,.3,1) both}
+  /* refined cards */
+  .skin{background:linear-gradient(180deg,#191d30,#141726);transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+  .skin:hover{transform:translateY(-3px)}
+  .frow{transition:transform .15s ease,border-color .15s ease}
+  .frow:hover{transform:translateY(-2px);border-color:var(--line-2)}
+  .qbtn{transition:transform .12s ease,background .15s ease,border-color .15s ease}
+  .qbtn:active{transform:translateY(1px)}
+  /* daily missions card */
+  .mcard{background:linear-gradient(180deg,#191d30,#141726);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin:12px auto 0;max-width:420px}
+  .mcard .mh{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px}
+  .mcard .mh .t{font-family:var(--cond);font-weight:700;font-size:16px;letter-spacing:.05em;text-transform:uppercase}
+  .mcard .mh .s{font-family:var(--mono);font-size:10px;color:var(--muted-2);letter-spacing:.1em;text-transform:uppercase}
+  .mrow{padding:10px 0;border-top:1px solid var(--line)}
+  .mrow .top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .mrow .nm{font-weight:600;font-size:13px}
+  .mrow .rw{font-family:var(--mono);font-size:12px;color:var(--gold);display:flex;align-items:center;gap:5px;white-space:nowrap}
+  .mrow .rw .d{width:11px;height:11px;border-radius:50%;background:radial-gradient(circle at 40% 38%,#FFF0C4,#FFD76A 55%,#B8860B)}
+  .mrow.done .rw{color:var(--teal)}
+  .mbar{height:6px;border-radius:999px;background:rgba(255,255,255,.06);margin-top:8px;overflow:hidden}
+  .mbar>span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#FFB13D,#E08A1E)}
+  .mrow.done .mbar>span{background:linear-gradient(90deg,#3FE0C5,#5FE0FF)}
+  .mprog{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:5px;letter-spacing:.03em}
+  /* awards */
+  .awards{display:flex;flex-direction:column;gap:10px}
+  .award{display:flex;align-items:center;gap:14px;background:linear-gradient(180deg,#191d30,#141726);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+  .award.done{border-color:rgba(63,224,197,.4)}
+  .award .medal{width:44px;height:44px;border-radius:12px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:20px;
+    background:var(--panel-2);border:1px solid var(--line-2);color:var(--muted-2)}
+  .award.done .medal{background:radial-gradient(circle at 40% 36%,#0f3a30,#0b241d);border-color:var(--teal);color:var(--teal)}
+  .award .ai{flex:1}
+  .award .an{font-family:var(--cond);font-weight:700;font-size:17px;letter-spacing:.03em;text-transform:uppercase}
+  .award .ad{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px}
+  .award .ap{font-family:var(--mono);font-size:10px;color:var(--muted-2);margin-top:6px;letter-spacing:.04em}
+  .award .as{font-family:var(--mono);font-size:13px;white-space:nowrap;text-align:right}
+  .award .as .rew{color:var(--gold)} .award.done .as .rew{color:var(--teal)}
+  /* toasts */
+  #toasts{position:fixed;left:0;right:0;top:calc(14px + var(--safe-t));z-index:30;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+  .toast{background:rgba(20,23,38,.96);border:1px solid var(--line-2);border-left:3px solid var(--amber);border-radius:10px;padding:10px 16px;
+    box-shadow:0 10px 30px rgba(0,0,0,.5);max-width:calc(100vw - 32px)}
+  .toast.teal{border-left-color:var(--teal)}
+  .toast .tt{font-family:var(--cond);font-weight:700;font-size:14px;letter-spacing:.04em;text-transform:uppercase}
+  .toast .ts{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px}
+  @keyframes toastIn{from{opacity:0;transform:translateY(-14px)}to{opacity:1;transform:none}}
+  @keyframes toastOut{to{opacity:0;transform:translateY(-14px)}}
+  .toast{animation:toastIn .3s cubic-bezier(.2,1,.3,1) both}
+  .toast.out{animation:toastOut .3s ease both}
+  @media (prefers-reduced-motion:reduce){.spin,.pop{animation:none}
+    .screen:not(.hidden),.overlay:not(.hidden),.overlay:not(.hidden) .modal,.toast{animation:none}
+    .skin:hover,.frow:hover{transform:none}}
 </style>
 </head>
 <body>
@@ -227,6 +282,7 @@
 <div id="vig"></div>
 <div id="flash"></div>
 <div id="dmglayer"></div>
+<div id="toasts"></div>
 
 <div id="loading"><div class="spin"></div><div class="l">FORGING THE ARENA…</div></div>
 
@@ -268,9 +324,11 @@
     <button class="cta" id="btnPlay">Ignite Run<span class="sub" id="playSub">Tap or press Enter</span></button>
     <div class="quickrow">
       <button class="qbtn rel" id="btnDaily"><span class="ic">◈</span>Daily<span class="pip hidden" id="dailyPip"></span></button>
+      <button class="qbtn" id="btnAwards"><span class="ic">★</span>Awards</button>
       <button class="qbtn" id="btnSkins"><span class="ic">◆</span>Skins</button>
       <button class="qbtn" id="btnForge"><span class="ic">⚒</span>Forge</button>
     </div>
+    <div class="mcard" id="missionCard"></div>
     <div style="height:20px"></div>
   </div></div>
 </div>
@@ -298,6 +356,20 @@
   <div class="body"><div class="wrap">
     <div class="shead"><h2>Permanent Power</h2><span class="h">Every run compounds</span></div>
     <div id="forgeList"></div>
+    <div style="height:12px"></div>
+  </div></div>
+  <div class="backbar"><button class="backbtn" data-back>← Home</button></div>
+</div>
+
+<!-- AWARDS -->
+<div id="awards" class="screen hidden">
+  <div class="appbar">
+    <div class="brand"><div class="mk"></div><div class="nm">Awards</div></div>
+    <div class="wallet"><div class="dot"></div><div class="amt num" id="walletAwards">0</div></div>
+  </div>
+  <div class="body"><div class="wrap">
+    <div class="shead"><h2>Achievements</h2><span class="h" id="awardCount">0 / 0</span></div>
+    <div class="awards" id="awardList"></div>
     <div style="height:12px"></div>
   </div></div>
   <div class="backbar"><button class="backbtn" data-back>← Home</button></div>
@@ -364,7 +436,15 @@ const KEY='ember_swarm_v2';
 let SAVE={coins:0,bestTime:0,bestKills:0,muted:false,forge:{},skin:'ember',skinsOwned:['ember'],daily:{day:-1,streak:0}};
 try{const s=localStorage.getItem(KEY);if(s)SAVE=Object.assign(SAVE,JSON.parse(s));}catch(e){}
 if(!SAVE.skinsOwned.includes('ember'))SAVE.skinsOwned.push('ember');
+SAVE.stats=Object.assign({totalKills:0,totalRuns:0,totalEmber:0,bestLevel:0},SAVE.stats||{});
+SAVE.achieved=SAVE.achieved||[];
+SAVE.missions=SAVE.missions||{day:-1,ids:[],prog:{},done:[]};
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(SAVE));}catch(e){}};
+const toastBox=$('toasts');
+function toast(title,sub,cls){const el=document.createElement('div');el.className='toast'+(cls==='teal'?' teal':'');
+  el.innerHTML='<div class="tt">'+title+'</div>'+(sub?'<div class="ts">'+sub+'</div>':'');
+  toastBox.appendChild(el);
+  setTimeout(()=>{el.classList.add('out');setTimeout(()=>el.remove(),320);},2600);}
 
 /* ============ config data ============ */
 const SKINS=[
@@ -375,6 +455,8 @@ const SKINS=[
   {id:'frost',   name:'Frostfire', cost:380, core:0xEAF4FF,emis:0x5FA8FF,shell:0x2F5FBF},
   {id:'void',    name:'Voidheart', cost:560, core:0xF1E7FF,emis:0x9D5CFF,shell:0x5A2F9F},
   {id:'gold',    name:'Goldcore',  cost:950, core:0xFFF7DA,emis:0xFFD76A,shell:0xB8860B},
+  {id:'emberlord',   name:'Emberlord',   cost:-1, core:0xFFE9C0,emis:0xFF7A1E,shell:0xC85A10},
+  {id:'swarmbreaker',name:'Swarmbreaker',cost:-1, core:0xE9FBFF,emis:0x00E0FF,shell:0x0090B0},
 ];
 const skinById=id=>SKINS.find(s=>s.id===id)||SKINS[0];
 const FORGE=[
@@ -387,6 +469,47 @@ const FORGE=[
 ];
 const fr=id=>SAVE.forge[id]|0;
 const forgeCost=f=>Math.floor(f.base*Math.pow(1.9,fr(f.id)));
+
+/* ---- achievements (lifetime unlock track) ---- */
+const ACH=[
+  {id:'first', name:'First Spark', desc:'Defeat your first enemy',   goal:1,    reward:20,  val:()=>SAVE.stats.totalKills},
+  {id:'surv1', name:'Kindled',     desc:'Survive 2:00 in a run',      goal:120,  reward:60,  time:true, val:()=>SAVE.bestTime},
+  {id:'surv2', name:'Ember-Born',  desc:'Survive 5:00 in a run',      goal:300,  reward:120, time:true, unlock:'emberlord', val:()=>SAVE.bestTime},
+  {id:'slay1', name:'Cinderhand',  desc:'Defeat 500 enemies total',   goal:500,  reward:60,  val:()=>SAVE.stats.totalKills},
+  {id:'slay2', name:'Swarmbreaker',desc:'Defeat 3000 enemies total',  goal:3000, reward:150, unlock:'swarmbreaker', val:()=>SAVE.stats.totalKills},
+  {id:'ascend',name:'Ascendant',   desc:'Reach level 20 in a run',    goal:20,   reward:100, val:()=>SAVE.stats.bestLevel},
+  {id:'vet',   name:'Veteran',     desc:'Complete 15 runs',           goal:15,   reward:80,  val:()=>SAVE.stats.totalRuns},
+  {id:'curator',name:'Curator',    desc:'Own 5 character skins',      goal:5,    reward:80,  val:()=>SAVE.skinsOwned.length},
+  {id:'gilded',name:'Gilded',      desc:'Bank 2000 ember from runs',  goal:2000, reward:100, val:()=>SAVE.stats.totalEmber},
+];
+function checkAchievements(){let changed=true,any=false;
+  while(changed){changed=false;
+    for(const a of ACH){if(SAVE.achieved.includes(a.id))continue;
+      if(a.val()>=a.goal){SAVE.achieved.push(a.id);SAVE.coins+=a.reward;
+        if(a.unlock&&!SAVE.skinsOwned.includes(a.unlock))SAVE.skinsOwned.push(a.unlock);
+        toast('Award · '+a.name,'+'+a.reward+' ember'+(a.unlock?' · skin unlocked':''),'teal');
+        changed=true;any=true;}}}
+  if(any)persist();return any;}
+
+/* ---- daily missions ---- */
+const MISSION_POOL=[
+  {id:'cull',    name:'Cull the Swarm',track:'kills',goal:300,reward:70, desc:g=>'Defeat '+g+' enemies today'},
+  {id:'endure',  name:'Endure',       track:'time', goal:480,reward:70, time:true, desc:g=>'Survive '+fmtTime(g)+' total today'},
+  {id:'climb',   name:'Climb',        track:'level',goal:15, reward:80, desc:g=>'Reach level '+g+' in a run'},
+  {id:'prospect',name:'Prospector',   track:'ember',goal:70, reward:60, desc:g=>'Collect '+g+' ember today'},
+  {id:'persist', name:'Persistent',   track:'runs', goal:5,  reward:60, desc:g=>'Complete '+g+' runs today'},
+  {id:'massacre',name:'Massacre',     track:'kills',goal:600,reward:120,desc:g=>'Defeat '+g+' enemies today'},
+];
+const missById=id=>MISSION_POOL.find(m=>m.id===id);
+const missValue=track=>SAVE.missions.prog[track]||0;
+function ensureMissions(){const d=dayNum();
+  if(SAVE.missions.day!==d){const s=d%MISSION_POOL.length;
+    SAVE.missions={day:d,ids:[MISSION_POOL[s].id,MISSION_POOL[(s+2)%MISSION_POOL.length].id,MISSION_POOL[(s+4)%MISSION_POOL.length].id],
+      prog:{kills:0,time:0,level:0,ember:0,runs:0},done:[]};persist();}}
+function checkMissions(){let any=false;
+  for(const id of SAVE.missions.ids){if(SAVE.missions.done.includes(id))continue;
+    const m=missById(id);if(missValue(m.track)>=m.goal){SAVE.missions.done.push(id);SAVE.coins+=m.reward;toast('Mission · '+m.name,'+'+m.reward+' ember');any=true;}}
+  if(any)persist();return any;}
 
 /* ============ audio ============ */
 let AC=null;
@@ -787,7 +910,7 @@ function updateHud(){$('hpbar').firstElementChild.style.width=(100*clamp(ST.hp/S
   $('val-kills').textContent=ST.kills;$('val-ember').textContent=ST.coins;}
 
 /* ============ screens ============ */
-const SCREENS=['home','skins','forge'];
+const SCREENS=['home','skins','forge','awards'];
 function setState(s){state=s;
   $('hud').style.display=(s==='run'||s==='levelup'||s==='pause')?'block':'none';
   for(const id of SCREENS)$(id).classList.toggle('hidden',s!==id);
@@ -796,29 +919,53 @@ function setState(s){state=s;
   $('gameover').classList.toggle('hidden',s!=='over');
   if(s==='pause'){const parts=[];for(const id in ST.weapons)parts.push(WEAPONS[id].name+' '+ST.weapons[id]);
     for(const id in ST.passives)parts.push(PASSIVES[id].name+' '+ST.passives[id]);$('pauseBuild').textContent=parts.join(' · ');}
-  if(s==='home'){clearScene();renderHome();}if(s==='skins')renderSkins();if(s==='forge')renderForge();
+  if(s==='home'){clearScene();renderHome();}if(s==='skins')renderSkins();if(s==='forge')renderForge();if(s==='awards')renderAwards();
   syncWallets();
 }
-function syncWallets(){const v=Math.floor(SAVE.coins);['walletHome','walletSkins','walletForge'].forEach(id=>{const el=$(id);if(el)el.textContent=v;});}
-function renderHome(){
+function syncWallets(){const v=Math.floor(SAVE.coins);['walletHome','walletSkins','walletForge','walletAwards'].forEach(id=>{const el=$(id);if(el)el.textContent=v;});}
+function renderHome(){ensureMissions();
   $('bestTime').textContent=SAVE.bestTime?fmtTime(SAVE.bestTime):'—';
   $('bestKills').textContent=SAVE.bestKills||'—';
   $('dailyPip').classList.toggle('hidden',!dailyAvailable());
+  renderMissionsCard();
 }
+function renderMissionsCard(){const box=$('missionCard');if(!box)return;
+  const doneN=SAVE.missions.done.length;
+  let html='<div class="mh"><div class="t">Daily Missions</div><div class="s">'+doneN+' / 3 · resets daily</div></div>';
+  for(const id of SAVE.missions.ids){const m=missById(id);if(!m)continue;
+    const raw=missValue(m.track),val=Math.min(raw,m.goal),done=SAVE.missions.done.includes(id);
+    const cur=m.time?fmtTime(raw):raw,goal=m.time?fmtTime(m.goal):m.goal;
+    html+='<div class="mrow'+(done?' done':'')+'"><div class="top"><div class="nm">'+m.desc(m.goal)+'</div>'+
+      '<div class="rw">'+(done?'✓ ':'<span class="d"></span>')+m.reward+'</div></div>'+
+      '<div class="mbar"><span style="width:'+(100*val/m.goal)+'%"></span></div>'+
+      '<div class="mprog">'+(done?'Complete':cur+' / '+goal)+'</div></div>';}
+  box.innerHTML=html;}
+function renderAwards(){const list=$('awardList');if(!list)return;list.innerHTML='';
+  $('awardCount').textContent=SAVE.achieved.length+' / '+ACH.length;
+  for(const a of ACH){const got=SAVE.achieved.includes(a.id);
+    const curTxt=a.time?fmtTime(Math.min(a.val(),a.goal)):Math.min(a.val(),a.goal),goalTxt=a.time?fmtTime(a.goal):a.goal;
+    const el=document.createElement('div');el.className='award'+(got?' done':'');
+    el.innerHTML='<div class="medal">'+(got?'★':'☆')+'</div>'+
+      '<div class="ai"><div class="an">'+a.name+'</div><div class="ad">'+a.desc+(a.unlock?' · unlocks a skin':'')+'</div>'+
+      '<div class="ap">'+(got?'Unlocked':curTxt+' / '+goalTxt)+'</div></div>'+
+      '<div class="as"><span class="rew">'+(got?'✓ ':'+')+a.reward+'</span></div>';
+    list.appendChild(el);}}
 function renderSkins(){const grid=$('skinGrid');grid.innerHTML='';
   for(const sk of SKINS){const owned=SAVE.skinsOwned.includes(sk.id),eq=SAVE.skin===sk.id;
-    const el=document.createElement('button');el.className='skin'+(eq?' equipped':'')+(!owned&&SAVE.coins<sk.cost?' cant':'');
+    const award=sk.cost<0;
+    const el=document.createElement('button');el.className='skin'+(eq?' equipped':'')+(!owned&&!award&&SAVE.coins<sk.cost?' cant':'');
     const g='#'+sk.core.toString(16).padStart(6,'0'),m='#'+sk.emis.toString(16).padStart(6,'0');
     let st;if(eq)st='<div class="st eq">Equipped</div>';
     else if(owned)st='<div class="st own">Tap to equip</div>';
+    else if(award)st='<div class="st" style="color:var(--violet)">Award only</div>';
     else st='<div class="st"><span class="price"><span class="d"></span>'+sk.cost+'</span></div>';
-    el.innerHTML=(owned?'':'<div class="lock">🔒</div>')+
+    el.innerHTML=(owned?'':'<div class="lock">'+(award?'★':'🔒')+'</div>')+
       '<div class="orb" style="background:radial-gradient(circle at 40% 36%,'+g+','+m+' 62%,#0a0b12);box-shadow:0 0 26px '+m+'88"></div>'+
       '<div class="nm">'+sk.name+'</div>'+st;
     el.onclick=()=>{
       if(SAVE.skin===sk.id)return;
-      if(SAVE.skinsOwned.includes(sk.id)){SAVE.skin=sk.id;applySkin();persist();sfx.buy();renderSkins();}
-      else if(SAVE.coins>=sk.cost){SAVE.coins-=sk.cost;SAVE.skinsOwned.push(sk.id);SAVE.skin=sk.id;applySkin();persist();sfx.buy();renderSkins();syncWallets();}
+      if(owned){SAVE.skin=sk.id;applySkin();persist();sfx.buy();renderSkins();}
+      else if(!award&&SAVE.coins>=sk.cost){SAVE.coins-=sk.cost;SAVE.skinsOwned.push(sk.id);SAVE.skin=sk.id;applySkin();checkAchievements();persist();sfx.buy();renderSkins();syncWallets();}
       else{el.animate([{transform:'translateX(-4px)'},{transform:'translateX(4px)'},{transform:'translateX(0)'}],{duration:180});}
     };
     grid.appendChild(el);}
@@ -861,6 +1008,12 @@ function startRun(){clearScene();newRun();applyPassives();buildChips();
 function endRun(){if(ST.over)return;ST.over=true;
   const earned=Math.floor((ST.coins+Math.floor(ST.t/20)+ST.level*2)*ST.greed);SAVE.coins+=earned;
   let best=false;if(ST.t>SAVE.bestTime){SAVE.bestTime=ST.t;best=true;}if(ST.kills>SAVE.bestKills){SAVE.bestKills=ST.kills;best=true;}
+  // lifetime stats + daily missions + achievements
+  ensureMissions();
+  SAVE.stats.totalKills+=ST.kills;SAVE.stats.totalRuns+=1;SAVE.stats.totalEmber+=earned;
+  if(ST.level>SAVE.stats.bestLevel)SAVE.stats.bestLevel=ST.level;
+  const P=SAVE.missions.prog;P.kills+=ST.kills;P.time+=ST.t;P.ember+=earned;P.runs+=1;if(ST.level>P.level)P.level=ST.level;
+  checkMissions();checkAchievements();
   persist();sfx.over();ST.shake=1.2;
   $('goStats').innerHTML='<div class="c"><div class="k">Survived</div><div class="v num">'+fmtTime(ST.t)+'</div></div>'+
     '<div class="c"><div class="k">Kills</div><div class="v num">'+ST.kills+'</div></div>'+
@@ -873,6 +1026,7 @@ function endRun(){if(ST.over)return;ST.over=true;
 /* buttons */
 $('btnPlay').onclick=startRun;$('btnRetry').onclick=startRun;$('btnHome').onclick=()=>setState('home');
 $('btnSkins').onclick=()=>setState('skins');$('btnForge').onclick=()=>setState('forge');
+$('btnAwards').onclick=()=>setState('awards');
 $('btnDaily').onclick=openDaily;
 document.querySelectorAll('[data-back]').forEach(b=>b.onclick=()=>setState('home'));
 $('btnResume').onclick=()=>setState('run');$('btnQuit').onclick=()=>endRun();
@@ -902,6 +1056,7 @@ if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch
 /* boot */
 camera.position.set(0,30,40);camera.lookAt(0,1,0);
 $('loading').classList.add('hidden');
+ensureMissions();checkAchievements();
 setState('home');
 if(dailyAvailable()&&SAVE.bestTime>0)setTimeout(openDaily,500);
 
