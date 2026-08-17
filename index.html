@@ -29,7 +29,8 @@
        -webkit-font-smoothing:antialiased}
   #cv{position:fixed;inset:0;width:100%;height:100%;display:block}
   #vig{position:fixed;inset:0;pointer-events:none;background:radial-gradient(125% 90% at 50% 40%,transparent 52%,rgba(3,4,8,.66) 100%)}
-  #flash{position:fixed;inset:0;pointer-events:none;background:var(--red);opacity:0;mix-blend-mode:screen}
+  #flash{position:fixed;inset:0;pointer-events:none;opacity:0;
+    background:radial-gradient(125% 105% at 50% 50%,transparent 48%,rgba(255,49,71,.72) 100%)}
 
   .num{font-variant-numeric:tabular-nums}
   .mono{font-family:var(--mono)}
@@ -568,7 +569,7 @@ function newRun(){
   ST={t:0,kills:0,coins:0,level:1,xp:0,xpNext:12,hp:maxhp,maxhp,
     px:0,pz:0,iframe:0,orbitAng:0,shake:0,pendingLU:0,
     speed:15*(1+.04*fr('swift')),dmgMul:1+.06*fr('pow'),cdMul:1,magnet:6*(1+.18*fr('mag')),
-    regen:.3*fr('mend'),crit:.05,greed:1+.15*fr('greed'),
+    regen:.3*fr('mend'),crit:.05,greed:1+.15*fr('greed'),hitFlash:0,
     weapons:{bolt:1},passives:{},timers:{bolt:0,nova:0,spawn:1.0},
     enemies:[],bolts:[],orbs:[],coinDrops:[],over:false};
 }
@@ -722,11 +723,15 @@ function update(dt){
   if(ST.shake>0){tmpV.x+=rand(-1,1)*ST.shake;tmpV.z+=rand(-1,1)*ST.shake;ST.shake=Math.max(0,ST.shake-dt*1.6);}
   camera.position.lerp(tmpV,Math.min(1,8*dt));camera.lookAt(ST.px,1,ST.pz);
 
+  if(ST.hitFlash>0)ST.hitFlash=Math.max(0,ST.hitFlash-dt*3.2);
+  flashEl.style.opacity=(ST.hitFlash*0.85).toFixed(3);
+
   updateDamageNumbers(dt);updateHud();
 }
+const flashEl=$('flash');
 function hurtPlayer(dmg){const d=Math.max(1,Math.round(dmg));ST.hp-=d;ST.iframe=.7;ST.shake=.6;sfx.hurt();
   spawnParts(ST.px,1.2,ST.pz,0xFF4F66,8);dmgNumber(ST.px,2.6,ST.pz,'-'+d,'player');
-  const f=$('flash');f.style.transition='none';f.style.opacity='.4';requestAnimationFrame(()=>{f.style.transition='opacity .3s';f.style.opacity='0';});
+  ST.hitFlash=1;
   if(ST.hp<=0){ST.hp=0;endRun();}}
 function gainXp(v){ST.xp+=v;sfx.gem();
   while(ST.xp>=ST.xpNext){ST.xp-=ST.xpNext;ST.level++;ST.xpNext=Math.floor(8+ST.level*4+Math.pow(ST.level,1.35));ST.pendingLU++;}
@@ -833,7 +838,7 @@ $('btnClaim').onclick=()=>{const b=$('btnClaim');
 function clearScene(){for(const t in enemyPool)for(const g of enemyPool[t])g.visible=false;
   for(const m of boltMeshes)m.visible=false;for(const m of orbMeshes)m.visible=false;
   for(const m of coinMeshes)m.visible=false;for(const m of bladeMeshes)m.visible=false;
-  for(const p of parts)p.life=0;for(const d of dnActive)d.el.style.opacity='0';dnActive.length=0;}
+  for(const p of parts)p.life=0;for(const d of dnActive)d.el.style.opacity='0';dnActive.length=0;flashEl.style.opacity='0';}
 function startRun(){clearScene();newRun();applyPassives();buildChips();
   camera.position.set(CAM_OFF.x,CAM_OFF.y,CAM_OFF.z);setState('run');}
 function endRun(){if(ST.over)return;ST.over=true;
