@@ -448,15 +448,17 @@ function toast(title,sub,cls){const el=document.createElement('div');el.classNam
 
 /* ============ config data ============ */
 const SKINS=[
-  {id:'ember',   name:'Ember',     cost:0,   core:0xFFF3D0,emis:0xFFB13D,shell:0xE08A1E},
-  {id:'ash',     name:'Ashen',     cost:120, core:0xF0ECE0,emis:0x9AA0BC,shell:0x5A5F78},
-  {id:'verdant', name:'Verdant',   cost:220, core:0xEAFFF7,emis:0x3FE0C5,shell:0x1F8F7C},
-  {id:'blood',   name:'Bloodcoal', cost:220, core:0xFFE3E7,emis:0xFF4F66,shell:0xB0243A},
-  {id:'frost',   name:'Frostfire', cost:380, core:0xEAF4FF,emis:0x5FA8FF,shell:0x2F5FBF},
-  {id:'void',    name:'Voidheart', cost:560, core:0xF1E7FF,emis:0x9D5CFF,shell:0x5A2F9F},
-  {id:'gold',    name:'Goldcore',  cost:950, core:0xFFF7DA,emis:0xFFD76A,shell:0xB8860B},
-  {id:'emberlord',   name:'Emberlord',   cost:-1, core:0xFFE9C0,emis:0xFF7A1E,shell:0xC85A10},
-  {id:'swarmbreaker',name:'Swarmbreaker',cost:-1, core:0xE9FBFF,emis:0x00E0FF,shell:0x0090B0},
+  {id:'ember',   name:'Ember',     cost:0,   shape:'orb',    core:0xFFF3D0,emis:0xFFB13D,shell:0xE08A1E},
+  {id:'ash',     name:'Ashen',     cost:120, shape:'orb',    core:0xF0ECE0,emis:0x9AA0BC,shell:0x5A5F78},
+  {id:'verdant', name:'Verdant',   cost:220, shape:'crystal',core:0xEAFFF7,emis:0x3FE0C5,shell:0x1F8F7C},
+  {id:'blood',   name:'Bloodcoal', cost:220, shape:'spike',  core:0xFFE3E7,emis:0xFF4F66,shell:0xB0243A},
+  {id:'frost',   name:'Frostfire', cost:380, shape:'ring',   core:0xEAF4FF,emis:0x5FA8FF,shell:0x2F5FBF},
+  {id:'prism',   name:'Prism',     cost:480, shape:'star',   core:0xFFF6FB,emis:0xFF6FD5,shell:0xB02E88},
+  {id:'void',    name:'Voidheart', cost:560, shape:'orbit',  core:0xF1E7FF,emis:0x9D5CFF,shell:0x5A2F9F},
+  {id:'sentinel',name:'Sentinel',  cost:720, shape:'blade',  core:0xEAFBFF,emis:0x39D0FF,shell:0x1C6E9E},
+  {id:'gold',    name:'Goldcore',  cost:950, shape:'orb',    core:0xFFF7DA,emis:0xFFD76A,shell:0xB8860B},
+  {id:'emberlord',   name:'Emberlord',   cost:-1, shape:'crown', core:0xFFE9C0,emis:0xFF7A1E,shell:0xC85A10},
+  {id:'swarmbreaker',name:'Swarmbreaker',cost:-1, shape:'orbit', core:0xE9FBFF,emis:0x00E0FF,shell:0x0090B0},
 ];
 const skinById=id=>SKINS.find(s=>s.id===id)||SKINS[0];
 const FORGE=[
@@ -654,6 +656,7 @@ function buildEnemy(type){
     g=buildGeneric(ETYPE[type]);w=ETYPE[type].w;
   }
   g.userData.hpbar=makeHpBar(w);
+  addLabel(g.userData.hpbar,type);
   scene.add(g);return g;
 }
 // cat: small|elite|boss · from: seconds before it can appear · behavior drives AI
@@ -672,6 +675,20 @@ const ETYPE={
   overlord:{r:4.4,hp:2800,spd:2.4,dmg:38,xp:60,y:4.4, cat:'boss', from:600, name:'Overlord',behavior:'overlord',geo:geoOverlord,mat:matOverlord,coreMat:matOverlordCore,shards:8,eyes:[1.3,3.6,1.1,3],w:7},
 };
 const isBossType=t=>ETYPE[t].cat==='boss';
+// threat tier 1..5 → clear "how strong" labels above each enemy
+const TIER={grub:1,dart:1,stinger:1,wraith:2,brute:2,hive:2,charger:3,spitter:3,boss:3,golem:4,colossus:5,overlord:5};
+const TIERCOL=['#9AA0BC','#7CFF9E','#FFD23D','#FF9A3D','#FF4F66'];
+const labelCache={};
+function labelTex(type){if(labelCache[type])return labelCache[type];
+  const tier=TIER[type]||1,name=(ETYPE[type].name||type).toUpperCase(),col=TIERCOL[Math.min(4,tier-1)];
+  const c=document.createElement('canvas');c.width=256;c.height=72;const g=c.getContext('2d');
+  g.textAlign='center';g.textBaseline='middle';g.shadowColor='rgba(0,0,0,.85)';g.shadowBlur=5;
+  g.fillStyle=col;g.font='700 30px Barlow,Arial,sans-serif';g.fillText(name,128,25);
+  g.font='700 22px Arial,sans-serif';g.fillText('★'.repeat(tier),128,54);
+  const tex=new THREE.CanvasTexture(c);labelCache[type]=tex;return tex;}
+function addLabel(hpbar,type){const big=ETYPE[type].cat==='boss';const lh=big?1.8:1.05,asp=256/72;
+  const lab=new THREE.Mesh(geoBar,new THREE.MeshBasicMaterial({map:labelTex(type),transparent:true,depthTest:false,toneMapped:false}));
+  lab.scale.set(lh*asp,lh,1);lab.position.y=big?1.2:0.64;lab.renderOrder=1000;hpbar.add(lab);}
 const MAXE=isMobile?46:80; // hard cap on concurrent enemies
 function poolBuild(type,n){const a=[];for(let i=0;i<n;i++)a.push(buildEnemy(type));return a;}
 const enemyPool={
@@ -689,17 +706,46 @@ const coinMeshes=poolMesh(geoCoin,matCoin,70,false);
 const bladeMeshes=poolMesh(geoBlade,matBlade,6,false);
 const take=arr=>{for(const m of arr)if(!m.visible){m.visible=true;return m;}return null;};
 
-/* player */
-const player=new THREE.Group();
-const coreMat=new THREE.MeshStandardMaterial({color:0xFFF3D0,emissive:0xFFB13D,emissiveIntensity:2.2,roughness:.25,metalness:.1});
-const shellMat=new THREE.MeshStandardMaterial({color:0xE08A1E,emissive:0xE08A1E,emissiveIntensity:.7,wireframe:true,transparent:true,opacity:.5});
-const pcore=new THREE.Mesh(new THREE.IcosahedronGeometry(1.05,1),coreMat);pcore.castShadow=!isMobile;player.add(pcore);
-const pshell=new THREE.Mesh(new THREE.IcosahedronGeometry(1.5,0),shellMat);player.add(pshell);
-scene.add(player);
-function applySkin(){const s=skinById(SAVE.skin);
-  coreMat.color.setHex(s.core);coreMat.emissive.setHex(s.emis);
-  shellMat.color.setHex(s.shell);shellMat.emissive.setHex(s.shell);
-  emberLight.color.setHex(s.emis);}
+/* player — model rebuilt per skin so skins change SHAPE, not just colour */
+const player=new THREE.Group();scene.add(player);
+let pcore,pshell,coreMat,shellMat; // pcore = main spinning body, pshell = secondary (shell/orbit/ring) that also pulses
+const geoConeSpike=new THREE.ConeGeometry(0.24,0.9,5);
+function buildPlayerModel(s){
+  while(player.children.length)player.remove(player.children[0]);
+  coreMat=new THREE.MeshStandardMaterial({color:s.core,emissive:s.emis,emissiveIntensity:2.1,roughness:.25,metalness:.15});
+  shellMat=new THREE.MeshStandardMaterial({color:s.shell,emissive:s.emis,emissiveIntensity:.9,roughness:.3,metalness:.2});
+  const wire=new THREE.MeshStandardMaterial({color:s.shell,emissive:s.emis,emissiveIntensity:.8,wireframe:true,transparent:true,opacity:.5});
+  const sh=s.shape||'orb';
+  if(sh==='orb'){
+    pcore=new THREE.Mesh(new THREE.IcosahedronGeometry(1.05,1),coreMat);
+    pshell=new THREE.Mesh(new THREE.IcosahedronGeometry(1.5,0),wire);
+  }else if(sh==='crystal'){
+    pcore=new THREE.Mesh(new THREE.OctahedronGeometry(1.15,0),coreMat);
+    pshell=new THREE.Group();for(let i=0;i<3;i++){const a=i/3*TAU;const s2=new THREE.Mesh(new THREE.OctahedronGeometry(0.5,0),shellMat);s2.position.set(Math.cos(a)*1.6,0,Math.sin(a)*1.6);pshell.add(s2);}
+  }else if(sh==='spike'){
+    pcore=new THREE.Mesh(new THREE.IcosahedronGeometry(1.0,0),coreMat);
+    pshell=new THREE.Group();const dirs=[[0,1,0],[0,-1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]];
+    for(const d of dirs){const sp=new THREE.Mesh(geoConeSpike,shellMat);sp.position.set(d[0]*1.15,d[1]*1.15,d[2]*1.15);sp.lookAt(d[0]*3,d[1]*3,d[2]*3);sp.rotateX(Math.PI/2);pshell.add(sp);}
+  }else if(sh==='ring'){
+    pcore=new THREE.Mesh(new THREE.IcosahedronGeometry(1.0,1),coreMat);
+    pshell=new THREE.Mesh(new THREE.TorusGeometry(1.7,0.13,8,32),shellMat);pshell.rotation.x=Math.PI/2.3;
+  }else if(sh==='star'){
+    pcore=new THREE.Group();const t1=new THREE.Mesh(new THREE.TetrahedronGeometry(1.3,0),coreMat);const t2=new THREE.Mesh(new THREE.TetrahedronGeometry(1.3,0),coreMat);t2.rotation.y=Math.PI;t2.rotation.z=Math.PI;pcore.add(t1);pcore.add(t2);
+    pshell=new THREE.Mesh(new THREE.IcosahedronGeometry(1.55,0),wire);
+  }else if(sh==='orbit'){
+    pcore=new THREE.Mesh(new THREE.IcosahedronGeometry(1.0,1),coreMat);
+    pshell=new THREE.Group();for(let i=0;i<4;i++){const a=i/4*TAU;const s2=new THREE.Mesh(new THREE.TetrahedronGeometry(0.42,0),shellMat);s2.position.set(Math.cos(a)*1.7,0,Math.sin(a)*1.7);pshell.add(s2);}
+  }else if(sh==='blade'){
+    pcore=new THREE.Mesh(new THREE.SphereGeometry(1.0,16,12),coreMat);
+    pshell=new THREE.Group();for(let i=0;i<3;i++){const a=i/3*TAU;const bl=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.5,1.6),shellMat);bl.position.set(Math.cos(a)*1.5,0,Math.sin(a)*1.5);bl.lookAt(0,0,0);pshell.add(bl);}
+  }else if(sh==='crown'){
+    pcore=new THREE.Mesh(new THREE.IcosahedronGeometry(1.05,0),coreMat);
+    pshell=new THREE.Group();for(let i=0;i<6;i++){const a=i/6*TAU;const fl=new THREE.Mesh(geoConeSpike,shellMat);fl.scale.set(1,1.6,1);fl.position.set(Math.cos(a)*0.9,0.9,Math.sin(a)*0.9);pshell.add(fl);}
+  }else{pcore=new THREE.Mesh(new THREE.IcosahedronGeometry(1.05,1),coreMat);pshell=new THREE.Mesh(new THREE.IcosahedronGeometry(1.5,0),wire);}
+  pcore.castShadow=!isMobile;
+  player.add(pcore);player.add(pshell);
+}
+function applySkin(){const s=skinById(SAVE.skin);buildPlayerModel(s);emberLight.color.setHex(s.emis);}
 applySkin();
 
 /* nova ring */
