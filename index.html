@@ -812,7 +812,7 @@ const ETYPE={
   hive:    {r:1.3,hp:80, spd:4.4, dmg:11,xp:3, y:1.3, cat:'elite',from:200, name:'Hive',   behavior:'split',geo:geoHive,mat:matHive,eyes:[.42,.9,.3,1],w:2.0},
   charger: {r:1.0,hp:70, spd:5.0, dmg:16,xp:3, y:1.0, cat:'elite',from:260, name:'Charger',behavior:'charge',geo:geoCharger,mat:matCharger,eyes:[.32,.95,.4,1],w:1.6},
   spitter: {r:1.1,hp:90, spd:3.8, dmg:12,xp:3, y:1.5, cat:'elite',from:320, name:'Spitter',behavior:'range',geo:geoSpitter,mat:matSpitter,shards:4,eyes:[.4,.9,.3,1],w:1.9},
-  boss:    {r:3.0,hp:650,spd:3.1, dmg:30,xp:30,y:3.1, cat:'boss', from:20,  name:'Warden'},
+  boss:    {r:3.0,hp:650,spd:3.1, dmg:30,xp:30,y:3.1, cat:'boss', from:12,  name:'Warden'},
   golem:   {r:1.9,hp:520,spd:2.7, dmg:26,xp:9, y:1.9, cat:'boss', from:150, name:'Golem',  behavior:'slow', geo:geoGolem,mat:matGolem,coreMat:matGolemCore,eyes:[.7,1.3,.5,1.4],w:3.6},
   colossus:{r:4.0,hp:2000,spd:2.2,dmg:34,xp:45,y:4.0, cat:'boss', from:480, name:'Colossus',behavior:'summon',geo:geoColossus,mat:matColossus,coreMat:matColossusCore,shards:6,eyes:[1.1,3.2,1,2.6],w:6.5},
   overlord:{r:4.4,hp:2800,spd:2.4,dmg:38,xp:60,y:4.4, cat:'boss', from:600, name:'Overlord',behavior:'overlord',geo:geoOverlord,mat:matOverlord,coreMat:matOverlordCore,shards:8,eyes:[1.3,3.6,1.1,3],w:7},
@@ -1283,9 +1283,9 @@ function renderHome(){ensureMissions();
 }
 /* ---- profile editor ---- */
 let editAv=null;
-function renderProfile(){editAv=editAv||Object.assign({},SAVE.profile.av);
+function renderProfile(){const fresh=!editAv;editAv=editAv||Object.assign({},SAVE.profile.av);
   $('profileAv').innerHTML=avatarSVG(editAv,180);
-  $('nameInput').value=SAVE.profile.name;
+  if(fresh)$('nameInput').value=SAVE.profile.name;
   const list=$('traitList');list.innerHTML='';
   for(const c of AV_CATS){const row=document.createElement('div');row.className='traitrow';
     const cur=c.k==='bg'?('Style '+((editAv[c.k]%c.arr.length)+1)):(c.k==='skin'?('Shade '+((editAv[c.k]%c.arr.length)+1)):String(c.arr[editAv[c.k]%c.arr.length]).toUpperCase());
