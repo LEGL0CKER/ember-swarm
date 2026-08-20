@@ -1012,7 +1012,7 @@ function applyPassives(){const p=ST.passives;
 }
 
 /* ============ enemies ============ */
-function hpScale(){const m=ST.t/60;return 1+.28*m+.04*m*m}
+function hpScale(){return 1+((ST.wlevel||1)-1)*0.5+Math.min(1.5,ST.t/360);}
 function spawnEnemy(type,fx,fz){
   if(ST.enemies.length>=MAXE)return null;
   const d=ETYPE[type];const g=take(enemyPool[type]);if(!g)return null;
@@ -1021,7 +1021,7 @@ function spawnEnemy(type,fx,fz){
   else{const a=Math.random()*TAU,dist=rand(46,62);x=clamp(ST.px+Math.cos(a)*dist,-ARENA,ARENA);z=clamp(ST.pz+Math.sin(a)*dist,-ARENA,ARENA);}
   const m=ST.t/60;
   const hp=isBossType(type)
-    ? d.hp*(1+Math.min(6,((ST.bossN||1)-1))*0.35)*(1+Math.min(1.6,m*0.09))
+    ? d.hp*(1+((ST.wlevel||1)-1)*0.45)*(1+Math.min(.6,m*0.03))
     : d.hp*hpScale();
   const e={type,g,x,z,r:d.r,y:d.y,hp,maxhp:hp,dmg:d.dmg*(1+Math.min(2.6,ST.t/380)),
     spd:d.spd*(1+Math.min(.8,ST.t/60*.05))*rand(.9,1.1),xp:d.xp,hitCd:0,bladeCd:0,ph:Math.random()*TAU,flash:0,
@@ -1047,7 +1047,7 @@ function startWave(){
   if(ST.isBossWave){
     const btype=BOSS_ORDER[Math.min(ST.wlevel-1,BOSS_ORDER.length-1)];
     const b=spawnEnemy(btype);
-    if(b){b.isWaveBoss=true;b.maxhp*=1.7+0.25*(ST.wlevel-1);b.hp=b.maxhp;b.atkCd=2.6;b.atkSeq=0;b.spd*=0.85;ST.bossE=b;
+    if(b){b.isWaveBoss=true;b.atkCd=2.6;b.atkSeq=0;b.spd*=0.85;ST.bossE=b;
       beep(64,.6,'sawtooth',.08,-24);bannerMsg('BOSS',ETYPE[btype].name);showBossBar(b);ST.shake=Math.max(ST.shake,.7);}
   }else{
     ST.waveRoster=rosterForLevel(ST.wlevel);ST.spawnQueue=waveCount(ST.wave,ST.wlevel);ST.batchCd=0;hideBossBar();
