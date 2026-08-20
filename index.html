@@ -1048,7 +1048,10 @@ function startWave(){
   if(ST.isBossWave){
     const btype=BOSS_ORDER[Math.min(ST.wlevel-1,BOSS_ORDER.length-1)];
     const b=spawnEnemy(btype);
-    if(b){b.isWaveBoss=true;b.atkCd=2.6;b.atkSeq=0;b.spd*=0.85;ST.bossE=b;
+    if(b){b.isWaveBoss=true;b.atkSeq=0;b.spd*=0.85;ST.bossE=b;
+      // scale the boss to the player's current power so a strong build meets a tougher boss
+      const pw=playerPower(),sc=clamp(1+(pw-1)*0.28,1,2.8);
+      b.maxhp*=sc;b.hp=b.maxhp;b.dmg*=1+Math.min(1.1,(pw-1)*0.12);b.atkCd=Math.max(1.6,2.6-(pw-1)*0.32);
       beep(64,.6,'sawtooth',.08,-24);bannerMsg('BOSS',ETYPE[btype].name);showBossBar(b);ST.shake=Math.max(ST.shake,.7);}
   }else{
     ST.waveRoster=rosterForLevel(ST.wlevel);ST.spawnQueue=waveCount(ST.wave,ST.wlevel);ST.batchCd=0;hideBossBar();
@@ -1072,20 +1075,49 @@ function waveManager(dt){
   if(ST.spawnQueue<=0&&ST.enemies.length===0)clearWave();
 }
 /* ---- boss special attacks + telegraphs ---- */
-const teleMeshes=[];for(let i=0;i<6;i++){const m=new THREE.Mesh(new THREE.RingGeometry(0.86,1,44),new THREE.MeshBasicMaterial({color:0xFF4F66,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false,toneMapped:false}));m.rotation.x=-Math.PI/2;m.position.y=0.07;scene.add(m);teleMeshes.push(m);}
-function addTelegraph(x,z,r,delay,dmg){const mesh=teleMeshes.find(m=>m.material.opacity<=0)||teleMeshes[0];
+const teleMeshes=[];for(let i=0;i<16;i++){const m=new THREE.Mesh(new THREE.RingGeometry(0.86,1,44),new THREE.MeshBasicMaterial({color:0xFF4F66,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false,toneMapped:false}));m.rotation.x=-Math.PI/2;m.position.y=0.07;scene.add(m);teleMeshes.push(m);}
+function addTelegraph(x,z,r,delay,dmg){const mesh=teleMeshes.find(m=>m.material.opacity<=0)||teleMeshes[0];mesh.material.color.setHex(0xFF4F66);
   ST.telegraphs.push({x,z,r,t:delay,max:delay,dmg,mesh,done:false});}
-function updateTelegraphs(dt){for(const tg of ST.telegraphs){tg.t-=dt;const p=1-Math.max(0,tg.t)/tg.max;
-    tg.mesh.position.set(tg.x,0.07,tg.z);tg.mesh.scale.set(tg.r,tg.r,tg.r);tg.mesh.material.opacity=.25+.5*p;
-    if(tg.t<=0&&!tg.done){tg.done=true;tg.mesh.material.opacity=0;
-      spawnParts(tg.x,0.6,tg.z,0xFF4F66,18);ST.shake=Math.max(ST.shake,.45);beep(90,.25,'sawtooth',.06,-40);
-      if(((ST.px-tg.x)**2+(ST.pz-tg.z)**2)<tg.r*tg.r&&ST.iframe<=0)hurtPlayer(tg.dmg);}}
+function puddle(x,z,r,dur,dmg){const mesh=teleMeshes.find(m=>m.material.opacity<=0)||teleMeshes[0];mesh.material.color.setHex(0x7CFF3D);
+  ST.telegraphs.push({x,z,r,t:dur,max:dur,dmg,mesh,done:false,linger:true,tickCd:.3});}
+function updateTelegraphs(dt){for(const tg of ST.telegraphs){tg.t-=dt;tg.mesh.position.set(tg.x,0.07,tg.z);tg.mesh.scale.set(tg.r,tg.r,tg.r);
+    if(tg.linger){tg.mesh.material.opacity=.35+.12*Math.sin(ST.t*10);
+      tg.tickCd-=dt;if(tg.tickCd<=0){tg.tickCd=.4;if(((ST.px-tg.x)**2+(ST.pz-tg.z)**2)<tg.r*tg.r&&ST.iframe<=0)hurtPlayer(tg.dmg);}
+      if(tg.t<=0)tg.done=true;
+    }else{const p=1-Math.max(0,tg.t)/tg.max;tg.mesh.material.opacity=.25+.5*p;
+      if(tg.t<=0&&!tg.done){tg.done=true;spawnParts(tg.x,0.6,tg.z,0xFF4F66,18);ST.shake=Math.max(ST.shake,.45);beep(90,.25,'sawtooth',.06,-40);
+        if(((ST.px-tg.x)**2+(ST.pz-tg.z)**2)<tg.r*tg.r&&ST.iframe<=0)hurtPlayer(tg.dmg);}}}
   ST.telegraphs=ST.telegraphs.filter(tg=>{if(!tg.done)return true;tg.mesh.material.opacity=0;return false;});}
-function bossAttack(e){const seq=(e.atkSeq++)%4;const dx=ST.px-e.x,dz=ST.pz-e.z,dd=Math.hypot(dx,dz)||1;
-  if(seq===0){addTelegraph(ST.px,ST.pz,e.r*2.4,1.05,e.dmg*1.5);addTelegraph(ST.px+rand(-8,8),ST.pz+rand(-8,8),e.r*1.7,1.25,e.dmg*1.2);}
-  else if(seq===1){const n=12;for(let i=0;i<n;i++){const a=i/n*TAU;fireEbullet(e,Math.cos(a),Math.sin(a));}beep(240,.14,'square',.03,-100);}
-  else if(seq===2){e.dashT=.8;e.ddx=dx/dd;e.ddz=dz/dd;beep(140,.2,'sawtooth',.05,-60);}
-  else{const adds=unlockedOf('small');for(let i=0;i<3;i++){const s=spawnEnemy(pickOne(adds.length?adds:['grub']),e.x+rand(-7,7),e.z+rand(-7,7));if(s)s.summoned=true;}}}
+/* projectile + summon helpers */
+function fireShot(e,nx,nz,dmg,sp){const mesh=take(ebulletMeshes);if(!mesh)return;sp=sp||22;
+  mesh.position.set(e.x,e.y,e.z);ST.ebullets.push({mesh,x:e.x,y:e.y,z:e.z,vx:nx*sp,vz:nz*sp,life:3.6,dmg});}
+function radialVolley(e,n,dmg,off){off=off||0;for(let i=0;i<n;i++){const a=i/n*TAU+off;fireShot(e,Math.cos(a),Math.sin(a),dmg);}beep(240,.14,'square',.03,-90);}
+function coneVolley(e,nx,nz,spread,n,dmg){const base=Math.atan2(nz,nx);for(let i=0;i<n;i++){const a=base+(i-(n-1)/2)*(spread/Math.max(1,n-1));fireShot(e,Math.cos(a),Math.sin(a),dmg);}beep(300,.12,'square',.025,-110);}
+function summonAdds(e,type,count){const list=unlockedOf('small');for(let i=0;i<count;i++){const t=(type&&ETYPE[type])?type:pickOne(list.length?list:['grub']);const s=spawnEnemy(t,e.x+rand(-7,7),e.z+rand(-7,7));if(s)s.summoned=true;}beep(170,.2,'sine',.04,120);}
+/* per-boss unique attack sets */
+function bossAttack(e){const dx=ST.px-e.x,dz=ST.pz-e.z,dd=Math.hypot(dx,dz)||1,nx=dx/dd,nz=dz/dd,seq=e.atkSeq++,dm=e.dmg;
+  if(e.type==='boss'){        // WARDEN — agile bruiser: charge / lunge-slam / spread
+    const a=seq%3;
+    if(a===0){e.dashT=.9;e.ddx=nx;e.ddz=nz;beep(150,.2,'sawtooth',.05,-60);}
+    else if(a===1){addTelegraph(ST.px,ST.pz,e.r*2.2,.9,dm*1.5);addTelegraph(ST.px+nx*11,ST.pz+nz*11,e.r*1.9,1.2,dm*1.3);}
+    else coneVolley(e,nx,nz,1.0,5,dm*.5);
+  }else if(e.type==='golem'){  // YETI — slow siege: marching slams / quake + ring
+    const a=seq%2;
+    if(a===0){for(let i=1;i<=4;i++)addTelegraph(e.x+nx*i*6.5,e.z+nz*i*6.5,4.6,.45+i*.28,dm*1.4);}
+    else{addTelegraph(ST.px,ST.pz,e.r*3,1.25,dm*1.9);radialVolley(e,8,dm*.45);}
+  }else if(e.type==='colossus'){ // MUSHROOM KING — zoner: summon / spore puddles / burst
+    const a=seq%3;
+    if(a===0)summonAdds(e,'wraith',3);
+    else if(a===1){for(let i=0;i<3;i++)puddle(ST.px+rand(-11,11),ST.pz+rand(-11,11),5,4,dm*.4);}
+    else radialVolley(e,14,dm*.42,seq*0.4);
+  }else{                       // OVERLORD — bullet-hell caster (hardest): double ring / wide cone / summon+slam
+    const a=seq%3;
+    if(a===0){radialVolley(e,16,dm*.42,seq*0.25);radialVolley(e,16,dm*.42,seq*0.25+TAU/32);}
+    else if(a===1)coneVolley(e,nx,nz,1.4,9,dm*.45);
+    else{summonAdds(e,'brute',2);addTelegraph(ST.px,ST.pz,e.r*2.4,1,dm*1.6);}
+  }}
+function playerPower(){let wl=0;for(const w in ST.weapons)wl+=ST.weapons[w];let pl=0;for(const p in ST.passives)pl+=ST.passives[p];
+  return ST.dmgMul*(1+wl*0.10)*(1+pl*0.05)/Math.max(0.55,ST.cdMul);}
 function fireEbullet(e,nx,nz){const mesh=take(ebulletMeshes);if(!mesh)return;
   mesh.position.set(e.x,e.y,e.z);
   ST.ebullets.push({mesh,x:e.x,y:e.y,z:e.z,vx:nx*22,vz:nz*22,life:3.2,dmg:e.dmg*0.55});
@@ -1217,7 +1249,12 @@ function update(dt){
     if(ud.model){ // real animated monster model
       g.rotation.set(0,Math.atan2(dx,dz)+(MODELINFO[e.type].faceOff||0),0);
       g.position.set(e.x,0,e.z);
-      if(ud.mixer)ud.mixer.update(dt*(e.dashT>0?2:1));
+      if(ud.mixer){ // play the run cycle at the enemy's ACTUAL movement speed (no fast-limb sliding)
+        const moved=Math.hypot(e.x-(e.lx===undefined?e.x:e.lx),e.z-(e.lz===undefined?e.z:e.lz))/Math.max(dt,1e-4);
+        e.aspd=(e.aspd||0)*0.75+moved*0.25;
+        const rate=e.dashT>0?2.4:clamp(e.aspd/6.5,0.12,1.9);
+        ud.mixer.update(dt*rate);
+      }
     }else{
       g.rotation.y=Math.atan2(dx,dz);
       if(e.type==='grub'){const hop=Math.abs(Math.sin(e.ph*1.3));g.position.set(e.x,e.y+hop*.5,e.z);
@@ -1228,6 +1265,7 @@ function update(dt){
         if(ud.shards)ud.shards.rotation.y+=dt*(big?1.0:1.6);
         if(ud.core)ud.core.scale.setScalar(1+Math.sin(e.ph*(big?1.2:2))*.12);}
     }
+    e.lx=e.x;e.lz=e.z; // remember position for next-frame speed calc
     // health bar (billboarded, over everything)
     const hb=ud.hpbar,frac=Math.max(0,e.hp/e.maxhp),w=hb.userData.w;
     const barY=ud.model?(MODELINFO[e.type].headY):(e.y+e.r+(ETYPE[e.type].cat==='boss'?1.7:0.85));
