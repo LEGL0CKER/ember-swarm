@@ -51,6 +51,18 @@
   #timer{font-family:var(--cond);font-weight:700;font-size:clamp(30px,7vw,44px);line-height:.9;letter-spacing:.03em;
          text-align:center;text-shadow:0 2px 24px rgba(0,0,0,.6)}
   #timerwrap{position:absolute;top:calc(8px + var(--safe-t));left:0;right:0;text-align:center}
+  #waveInfo{font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--teal);margin-top:2px}
+  #bossbar{position:absolute;top:calc(62px + var(--safe-t));left:50%;transform:translateX(-50%);width:min(560px,84vw)}
+  #bossbar .bb-top{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px}
+  #bossbar #bossName{font-family:var(--cond);font-weight:700;font-size:16px;letter-spacing:.1em;text-transform:uppercase;color:#FF6376}
+  #bossbar #bossTier{font-family:var(--mono);font-size:12px;color:var(--gold)}
+  #bossbar .bb-bar{height:12px;border-radius:999px;background:rgba(255,79,102,.16);border:1px solid rgba(255,79,102,.4);overflow:hidden}
+  #bossbar .bb-bar>span{display:block;height:100%;width:100%;border-radius:999px;background:linear-gradient(90deg,#FF2E4C,#FF7E5F);transition:width .1s}
+  #centerBanner{position:absolute;top:32%;left:0;right:0;text-align:center;opacity:0;pointer-events:none}
+  #centerBanner.show{animation:bannerPop 1.6s ease forwards}
+  #centerBanner .cb-t{font-family:var(--cond);font-weight:700;font-size:clamp(40px,10vw,72px);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);text-shadow:0 4px 30px rgba(0,0,0,.6)}
+  #centerBanner .cb-s{font-family:var(--mono);font-size:14px;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);margin-top:4px}
+  @keyframes bannerPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:scale(1.04)}}
   #val-ember{color:var(--gold)}
 
   #bottomhud{position:absolute;left:0;right:0;bottom:0;padding:14px 16px calc(14px + var(--safe-b));
@@ -323,11 +335,13 @@
 
 <!-- in-run HUD -->
 <div id="hud">
-  <div id="timerwrap"><div id="timer">00:00</div></div>
+  <div id="timerwrap"><div id="timer">00:00</div><div id="waveInfo">LV 1 · WAVE 1</div></div>
+  <div id="bossbar" class="hidden"><div class="bb-top"><span id="bossName">WARDEN</span><span id="bossTier">★★★</span></div><div class="bb-bar"><span></span></div></div>
   <div id="topbar">
     <div class="stat"><span class="lab">Kills</span><span class="val num" id="val-kills">0</span></div>
     <div class="stat r"><span class="lab">Ember</span><span class="val num" id="val-ember">0</span></div>
   </div>
+  <div id="centerBanner"><div class="cb-t">WAVE 1</div><div class="cb-s">Level 1</div></div>
   <div id="hint">P pause · M sound</div>
   <div id="bottomhud">
     <div id="chips"></div>
@@ -984,7 +998,8 @@ function newRun(){
     px:0,pz:0,iframe:0,orbitAng:0,shake:0,pendingLU:0,
     speed:17*(1+.04*fr('swift')),dmgMul:1+.06*fr('pow'),cdMul:1,magnet:6*(1+.18*fr('mag')),
     regen:1+.3*fr('mend'),crit:.05,greed:1+.15*fr('greed'),hitFlash:0,bossN:0,
-    weapons:{bolt:1},passives:{},timers:{bolt:0,nova:0,spawn:0.6,elite:9,boss:15},
+    weapons:{bolt:1},passives:{},timers:{bolt:0,nova:0},
+    wave:0,wlevel:1,waveState:'break',waveTimer:2.2,isBossWave:false,spawnQueue:0,batchCd:0,waveRoster:['grub'],bossE:null,telegraphs:[],
     enemies:[],bolts:[],ebullets:[],orbs:[],coinDrops:[],over:false};
 }
 function applyPassives(){const p=ST.passives;
@@ -1016,25 +1031,60 @@ function spawnEnemy(type,fx,fz){
 }
 const unlockedOf=cat=>{const now=ST.t,out=[];for(const k in ETYPE)if(ETYPE[k].cat===cat&&ETYPE[k].from<=now)out.push(k);return out;};
 const pickOne=arr=>arr[Math.floor(Math.random()*arr.length)];
-function director(dt){const m=ST.t/60,T=ST.timers;
-  // sparse small trickle — grows to include stinger/wraith as they unlock
-  T.spawn-=dt;
-  const smalls=ST.enemies.reduce((n,e)=>n+(ETYPE[e.type].cat==='small'?1:0),0);
-  if(T.spawn<=0){T.spawn=Math.max(.7,1.5-m*.1);
-    if(smalls<Math.min(22,9+Math.floor(m*1.7))){const s=unlockedOf('small');if(s.length)spawnEnemy(pickOne(s));}}
-  // elites (brute/hive/charger/spitter as they unlock)
-  T.elite-=dt;
-  if(T.elite<=0&&m>0.6){T.elite=Math.max(5,14-m*1.1);const el=unlockedOf('elite');if(el.length)spawnEnemy(pickOne(el));}
-  // bosses — recurring & escalating, favouring the newest unlocked
-  T.boss-=dt;
-  if(T.boss<=0){T.boss=Math.max(20,44-m*2);const bs=unlockedOf('boss');
-    if(bs.length){ST.bossN=(ST.bossN||0)+1;
-      bs.sort((a,b)=>ETYPE[b].from-ETYPE[a].from);
-      const type=Math.random()<0.6?bs[0]:pickOne(bs);
-      const b=spawnEnemy(type);
-      if(b){beep(70,.5,'sawtooth',.07,-25);toast('⚠ '+(ETYPE[type].name)+' rises','Focus it down','teal');ST.shake=Math.max(ST.shake,.5);}
-      else ST.bossN--;}}
+
+/* ---- wave / level director ---- */
+const BOSS_ORDER=['boss','golem','colossus','overlord'];
+function rosterForLevel(lv){const r=['grub','dart'];
+  if(lv>=2)r.push('stinger','brute');
+  if(lv>=3)r.push('wraith','hive','charger');
+  if(lv>=4)r.push('spitter');
+  return r;}
+function waveCount(wave,lv){return Math.min(40,6+wave*2+lv*3);}
+function bannerMsg(txt,sub){const b=$('centerBanner');if(!b)return;b.querySelector('.cb-t').textContent=txt;b.querySelector('.cb-s').textContent=sub||'';
+  b.classList.remove('show');void b.offsetWidth;b.classList.add('show');}
+function startWave(){
+  ST.wave++;ST.wlevel=Math.floor((ST.wave-1)/5)+1;ST.isBossWave=(ST.wave%5===0);ST.waveState='active';
+  if(ST.isBossWave){
+    const btype=BOSS_ORDER[Math.min(ST.wlevel-1,BOSS_ORDER.length-1)];
+    const b=spawnEnemy(btype);
+    if(b){b.isWaveBoss=true;b.maxhp*=1.7+0.25*(ST.wlevel-1);b.hp=b.maxhp;b.atkCd=2.6;b.atkSeq=0;b.spd*=0.85;ST.bossE=b;
+      beep(64,.6,'sawtooth',.08,-24);bannerMsg('BOSS',ETYPE[btype].name);showBossBar(b);ST.shake=Math.max(ST.shake,.7);}
+  }else{
+    ST.waveRoster=rosterForLevel(ST.wlevel);ST.spawnQueue=waveCount(ST.wave,ST.wlevel);ST.batchCd=0;hideBossBar();
+    bannerMsg('WAVE '+ST.wave,'Level '+ST.wlevel);}
 }
+function clearWave(){
+  if(ST.isBossWave){for(const e of ST.enemies)if(!e.dead)killEnemy(e);ST.bossE=null;hideBossBar();}
+  ST.waveState='break';ST.waveTimer=ST.isBossWave?5:3;
+  const bonus=Math.floor((10+ST.wave*4)*ST.greed);ST.coins+=bonus;
+  toast('Wave '+ST.wave+' cleared',ST.isBossWave?('◆ Level '+ST.wlevel+' complete · +'+bonus+' ember'):'+'+bonus+' ember','teal');
+  ST.telegraphs.length=0;
+}
+function waveManager(dt){
+  if(ST.waveState==='break'){ST.waveTimer-=dt;if(ST.waveTimer<=0)startWave();return;}
+  if(ST.waveState!=='active')return;
+  if(ST.isBossWave){ if(!ST.bossE||ST.bossE.dead)clearWave(); return; }
+  // normal wave: spawn in paced batches, then clear when board is empty
+  if(ST.spawnQueue>0){ST.batchCd-=dt;
+    if(ST.batchCd<=0){ST.batchCd=1.15;const n=Math.min(ST.spawnQueue,3+ST.wlevel);
+      for(let i=0;i<n;i++){if(spawnEnemy(pickOne(ST.waveRoster)))ST.spawnQueue--;else break;}}}
+  if(ST.spawnQueue<=0&&ST.enemies.length===0)clearWave();
+}
+/* ---- boss special attacks + telegraphs ---- */
+const teleMeshes=[];for(let i=0;i<6;i++){const m=new THREE.Mesh(new THREE.RingGeometry(0.86,1,44),new THREE.MeshBasicMaterial({color:0xFF4F66,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false,toneMapped:false}));m.rotation.x=-Math.PI/2;m.position.y=0.07;scene.add(m);teleMeshes.push(m);}
+function addTelegraph(x,z,r,delay,dmg){const mesh=teleMeshes.find(m=>m.material.opacity<=0)||teleMeshes[0];
+  ST.telegraphs.push({x,z,r,t:delay,max:delay,dmg,mesh,done:false});}
+function updateTelegraphs(dt){for(const tg of ST.telegraphs){tg.t-=dt;const p=1-Math.max(0,tg.t)/tg.max;
+    tg.mesh.position.set(tg.x,0.07,tg.z);tg.mesh.scale.set(tg.r,tg.r,tg.r);tg.mesh.material.opacity=.25+.5*p;
+    if(tg.t<=0&&!tg.done){tg.done=true;tg.mesh.material.opacity=0;
+      spawnParts(tg.x,0.6,tg.z,0xFF4F66,18);ST.shake=Math.max(ST.shake,.45);beep(90,.25,'sawtooth',.06,-40);
+      if(((ST.px-tg.x)**2+(ST.pz-tg.z)**2)<tg.r*tg.r&&ST.iframe<=0)hurtPlayer(tg.dmg);}}
+  ST.telegraphs=ST.telegraphs.filter(tg=>{if(!tg.done)return true;tg.mesh.material.opacity=0;return false;});}
+function bossAttack(e){const seq=(e.atkSeq++)%4;const dx=ST.px-e.x,dz=ST.pz-e.z,dd=Math.hypot(dx,dz)||1;
+  if(seq===0){addTelegraph(ST.px,ST.pz,e.r*2.4,1.05,e.dmg*1.5);addTelegraph(ST.px+rand(-8,8),ST.pz+rand(-8,8),e.r*1.7,1.25,e.dmg*1.2);}
+  else if(seq===1){const n=12;for(let i=0;i<n;i++){const a=i/n*TAU;fireEbullet(e,Math.cos(a),Math.sin(a));}beep(240,.14,'square',.03,-100);}
+  else if(seq===2){e.dashT=.8;e.ddx=dx/dd;e.ddz=dz/dd;beep(140,.2,'sawtooth',.05,-60);}
+  else{const adds=unlockedOf('small');for(let i=0;i<3;i++){const s=spawnEnemy(pickOne(adds.length?adds:['grub']),e.x+rand(-7,7),e.z+rand(-7,7));if(s)s.summoned=true;}}}
 function fireEbullet(e,nx,nz){const mesh=take(ebulletMeshes);if(!mesh)return;
   mesh.position.set(e.x,e.y,e.z);
   ST.ebullets.push({mesh,x:e.x,y:e.y,z:e.z,vx:nx*22,vz:nz*22,life:3.2,dmg:e.dmg*0.55});
@@ -1119,7 +1169,7 @@ function update(dt){
   if(ml>.1&&Math.random()<.5)spawnParts(ST.px,.6,ST.pz,skinById(SAVE.skin).emis,1);
 
   ST.hp=Math.min(ST.maxhp,ST.hp+ST.regen*dt);ST.iframe-=dt;
-  director(dt);fire(dt);
+  waveManager(dt);fire(dt);updateTelegraphs(dt);
 
   if(ST.weapons.orbit){const s=WEAPONS.orbit.stat(ST.weapons.orbit);ST.orbitAng+=dt*2.6;
     for(let i=0;i<bladeMeshes.length;i++){const bm=bladeMeshes[i];
@@ -1128,12 +1178,23 @@ function update(dt){
         for(const e of ST.enemies){if(e.bladeCd>0)continue;const dx=bx-e.x,dz=bz-e.z;if(dx*dx+dz*dz<(1+e.r)**2){hurtEnemy(e,s.dmg);e.bladeCd=.35;}}
       }else bm.visible=false;}}
 
+  // separation pass — hitboxes so monsters don't cram into each other
+  {const EN=ST.enemies;for(let i=0;i<EN.length;i++){const a=EN[i];if(a.dead)continue;
+    for(let j=i+1;j<EN.length;j++){const b=EN[j];if(b.dead)continue;
+      const sx=a.x-b.x,sz=a.z-b.z,rr=(a.r+b.r)*0.92,s2=sx*sx+sz*sz;
+      if(s2<rr*rr&&s2>1e-4){const sd=Math.sqrt(s2),push=(rr-sd)/sd*0.5,aw=a.isWaveBoss?0.12:1,bw=b.isWaveBoss?0.12:1;
+        a.x+=sx*push*aw;a.z+=sz*push*aw;b.x-=sx*push*bw;b.z-=sz*push*bw;}}}}
   // enemies: behavior + movement + animation ("life")
   const cone=t=>t==='dart'||t==='stinger'||t==='wraith'||t==='charger';
   for(const e of ST.enemies){if(e.dead)continue;e.ph+=dt*4;if(e.bladeCd>0)e.bladeCd-=dt;if(e.flash>0)e.flash-=dt;
     let dx=ST.px-e.x,dz=ST.pz-e.z;const d=Math.hypot(dx,dz)||1;const nx=dx/d,nz=dz/d;
     const beh=e.behavior;
-    if(beh==='charge'){
+    if(e.isWaveBoss){
+      e.atkCd-=dt;
+      if(e.dashT>0){e.dashT-=dt;e.x+=e.ddx*20*dt;e.z+=e.ddz*20*dt;}
+      else{if(d>e.r+4)e.x+=nx*e.spd*dt,e.z+=nz*e.spd*dt;
+        if(e.atkCd<=0&&d<58){e.atkCd=rand(2.3,3.3);bossAttack(e);}}
+    }else if(beh==='charge'){
       e.chargeCd-=dt;
       if(e.dashT>0){e.dashT-=dt;e.x+=e.ddx*24*dt;e.z+=e.ddz*24*dt;}
       else{e.x+=nx*e.spd*dt;e.z+=nz*e.spd*dt;
@@ -1255,7 +1316,14 @@ function updateHud(){$('hpbar').firstElementChild.style.width=(100*clamp(ST.hp/S
   $('hptext').textContent=Math.ceil(ST.hp)+' / '+ST.maxhp;
   $('xpbar').firstElementChild.style.width=(100*clamp(ST.xp/ST.xpNext,0,1))+'%';
   $('timer').textContent=fmtTime(ST.t);$('lvlbadge').textContent=ST.level;
-  $('val-kills').textContent=ST.kills;$('val-ember').textContent=ST.coins;}
+  $('val-kills').textContent=ST.kills;$('val-ember').textContent=ST.coins;
+  $('waveInfo').textContent='LV '+ST.wlevel+' · WAVE '+ST.wave+(ST.isBossWave?' · BOSS':'');
+  if(ST.bossE&&!ST.bossE.dead)$('bossbar').querySelector('.bb-bar>span').style.width=(100*clamp(ST.bossE.hp/ST.bossE.maxhp,0,1))+'%';}
+function showBossBar(b){const el=$('bossbar');el.classList.remove('hidden');
+  $('bossName').textContent=(ETYPE[b.type].name||'BOSS').toUpperCase();
+  $('bossTier').textContent='★'.repeat(TIER[b.type]||3);
+  el.querySelector('.bb-bar>span').style.width='100%';}
+function hideBossBar(){$('bossbar').classList.add('hidden');}
 
 /* ============ screens ============ */
 const SCREENS=['home','skins','forge','awards','profile','ranks'];
@@ -1393,6 +1461,7 @@ function clearScene(){for(const t in enemyPool)for(const g of enemyPool[t]){g.vi
   for(const m of coinMeshes)m.visible=false;for(const m of bladeMeshes)m.visible=false;for(const m of ebulletMeshes)m.visible=false;
   for(const p of parts)p.life=0;for(const d of dnActive)d.el.style.opacity='0';dnActive.length=0;flashEl.style.opacity='0';}
 function startRun(){clearScene();newRun();applyPassives();buildChips();
+  hideBossBar();for(const m of teleMeshes)m.material.opacity=0;
   camera.position.set(CAM_OFF.x,CAM_OFF.y,CAM_OFF.z);setState('run');}
 function endRun(){if(ST.over)return;ST.over=true;
   const earned=Math.floor((ST.coins+Math.floor(ST.t/20)+ST.level*2)*ST.greed);SAVE.coins+=earned;
