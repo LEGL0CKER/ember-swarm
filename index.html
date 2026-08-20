@@ -1376,7 +1376,9 @@ function submitScore(run){try{fetch('/api/score',{method:'POST',headers:{'Conten
   body:JSON.stringify({token:SAVE.token,name:SAVE.profile.name,avatar:SAVE.profile.av,score:run.score,time:run.t,kills:run.k,level:run.l})}).catch(()=>{});}catch(e){}}
 function renderBoard(board,global,myBest){
   board.sort((a,b)=>b.score-a.score);
-  let meIdx=-1;if(myBest)meIdx=board.findIndex(r=>r.name===SAVE.profile.name&&r.score===myBest.score);
+  let meIdx=-1;const pn=SAVE.profile.name;
+  if(myBest)meIdx=board.findIndex(r=>r.name===pn&&r.score===myBest.score);
+  if(meIdx<0)meIdx=board.findIndex(r=>r.name===pn);
   const list=$('rankList');list.innerHTML='';
   board.slice(0,50).forEach((r,i)=>{const me=(i===meIdx);const row=document.createElement('div');
     row.className='rankrow'+(me?' me':'')+(i===0?' top1':i===1?' top2':i===2?' top3':'');

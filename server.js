@@ -37,7 +37,11 @@ if (DB_URL) {
         score INT, time INT, kills INT, level INT,
         updated_at TIMESTAMPTZ DEFAULT now()
       )`
-    ).then(() => console.log('DB ready')).catch(e => console.error('DB init error', e.message));
+    ).then(() => {
+      console.log('DB ready');
+      // one-off cleanup of setup test rows (fake tokens; never returned by real clients)
+      pool.query("DELETE FROM scores WHERE token IN ('testtoken1','tok2')").catch(() => {});
+    }).catch(e => console.error('DB init error', e.message));
   } catch (e) { console.error('pg load error', e.message); }
 }
 
