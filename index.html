@@ -589,6 +589,7 @@ try{const s=localStorage.getItem(KEY);if(s)SAVE=Object.assign(SAVE,JSON.parse(s)
 if(!SAVE.skinsOwned.includes('ember'))SAVE.skinsOwned.push('ember');
 if(!SAVE.profile)SAVE.profile={name:'Player',av:randAvatar()};
 if(!SAVE.profile.av)SAVE.profile.av=randAvatar();
+if(!SAVE.token)SAVE.token=(Date.now().toString(36)+Math.random().toString(36).slice(2,10));
 SAVE.scores=SAVE.scores||[];
 SAVE.stats=Object.assign({totalKills:0,totalRuns:0,totalEmber:0,bestLevel:0},SAVE.stats||{});
 SAVE.achieved=SAVE.achieved||[];
@@ -1369,22 +1370,36 @@ function ensureRivals(){if(SAVE.rivals&&SAVE.rivals.length)return;
   SAVE.rivals=RIVAL_NAMES.map((n,i)=>({name:n,av:randAvatar(),score:600+ri(7600),t:60+ri(560),k:40+ri(760),l:3+ri(24)}));
   // make score consistent with stats
   SAVE.rivals.forEach(r=>r.score=scoreOf(r.t,r.k,r.l));persist();}
-function renderLeaderboard(){ensureRivals();
-  const mine=(SAVE.scores||[]).map(s=>Object.assign({me:true},s));
-  const best=mine.slice().sort((a,b)=>b.score-a.score)[0];
-  const board=SAVE.rivals.map(r=>Object.assign({},r));
-  if(best)board.push(Object.assign({me:true,name:SAVE.profile.name,av:SAVE.profile.av},best));
-  else board.push({me:true,name:SAVE.profile.name,av:SAVE.profile.av,score:0,t:0,k:0,l:0,noRun:true});
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function safeAv(a){a=a||{};const n={};for(const c of AV_CATS){n[c.k]=(Math.abs(parseInt(a[c.k],10))||0)%c.arr.length;}return n;}
+function submitScore(run){try{fetch('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({token:SAVE.token,name:SAVE.profile.name,avatar:SAVE.profile.av,score:run.score,time:run.t,kills:run.k,level:run.l})}).catch(()=>{});}catch(e){}}
+function renderBoard(board,global,myBest){
   board.sort((a,b)=>b.score-a.score);
+  let meIdx=-1;if(myBest)meIdx=board.findIndex(r=>r.name===SAVE.profile.name&&r.score===myBest.score);
   const list=$('rankList');list.innerHTML='';
-  board.slice(0,20).forEach((r,i)=>{const row=document.createElement('div');
-    row.className='rankrow'+(r.me?' me':'')+(i===0?' top1':i===1?' top2':i===2?' top3':'');
-    row.innerHTML='<div class="rk">'+(i+1)+'</div><div class="rav">'+avatarSVG(r.av,42)+'</div>'+
-      '<div class="rn"><div class="nm2">'+r.name+(r.me?' (you)':'')+'</div><div class="sub2">'+(r.noRun?'no runs yet — play to rank':fmtTime(r.t)+' · '+r.k+' kills · lv '+r.l)+'</div></div>'+
-      '<div class="rsc">'+(r.noRun?'—':r.score.toLocaleString())+'</div>';
+  board.slice(0,50).forEach((r,i)=>{const me=(i===meIdx);const row=document.createElement('div');
+    row.className='rankrow'+(me?' me':'')+(i===0?' top1':i===1?' top2':i===2?' top3':'');
+    row.innerHTML='<div class="rk">'+(i+1)+'</div><div class="rav">'+avatarSVG(safeAv(r.av),42)+'</div>'+
+      '<div class="rn"><div class="nm2">'+esc(r.name)+(me?' (you)':'')+'</div><div class="sub2">'+fmtTime(r.time||0)+' · '+(r.kills||0)+' kills · lv '+(r.level||0)+'</div></div>'+
+      '<div class="rsc">'+(r.score||0).toLocaleString()+'</div>';
     list.appendChild(row);});
-  const myRank=board.findIndex(r=>r.me)+1;
-  $('ranksNote').textContent=best?('You rank #'+myRank+' of '+board.length):'Play a run to rank';
+  if(!board.length){$('ranksNote').textContent=global?'Be the first — play a run!':'Play a run to rank';return;}
+  $('ranksNote').textContent=(global?'Global':'Offline · local')+(meIdx>=0?' · you rank #'+(meIdx+1):(myBest?' · climb into the top 50':' · play to rank'));
+}
+function renderLeaderboard(){
+  const myBest=(SAVE.scores||[]).slice().sort((a,b)=>b.score-a.score)[0];
+  $('rankList').innerHTML='<div style="text-align:center;color:var(--muted);font-family:var(--mono);font-size:12px;padding:26px 0">Loading global board…</div>';
+  $('ranksNote').textContent='Loading…';
+  fetch('/api/leaderboard',{cache:'no-store'}).then(r=>{if(!r.ok)throw 0;return r.json();}).then(j=>{
+    const board=(j.board||[]).map(r=>({name:r.name,av:r.avatar,score:r.score,time:r.time,kills:r.kills,level:r.level}));
+    renderBoard(board,true,myBest);
+  }).catch(()=>{ // offline / API down → local + rivals fallback
+    ensureRivals();
+    const board=SAVE.rivals.map(r=>({name:r.name,av:r.av,score:r.score,time:r.t,kills:r.k,level:r.l}));
+    if(myBest)board.push({name:SAVE.profile.name,av:SAVE.profile.av,score:myBest.score,time:myBest.t,kills:myBest.k,level:myBest.l});
+    renderBoard(board,false,myBest);
+  });
 }
 function renderMissionsCard(){const box=$('missionCard');if(!box)return;
   const doneN=SAVE.missions.done.length;
@@ -1472,10 +1487,11 @@ function endRun(){if(ST.over)return;ST.over=true;
   if(ST.level>SAVE.stats.bestLevel)SAVE.stats.bestLevel=ST.level;
   const P=SAVE.missions.prog;P.kills+=ST.kills;P.time+=ST.t;P.ember+=earned;P.runs+=1;if(ST.level>P.level)P.level=ST.level;
   checkMissions();checkAchievements();
-  // record run to the leaderboard
+  // record run to the leaderboard (local + submit to global board)
   const sc=scoreOf(ST.t,ST.kills,ST.level);
   SAVE.scores.push({t:Math.floor(ST.t),k:ST.kills,l:ST.level,score:sc});
   SAVE.scores.sort((a,b)=>b.score-a.score);SAVE.scores=SAVE.scores.slice(0,10);
+  submitScore({t:Math.floor(ST.t),k:ST.kills,l:ST.level,score:sc});
   persist();sfx.over();ST.shake=1.2;
   $('goStats').innerHTML='<div class="c"><div class="k">Survived</div><div class="v num">'+fmtTime(ST.t)+'</div></div>'+
     '<div class="c"><div class="k">Kills</div><div class="v num">'+ST.kills+'</div></div>'+
