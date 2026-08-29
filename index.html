@@ -902,14 +902,18 @@ const ETYPE={
   hive:    {r:1.3,hp:80, spd:4.4, dmg:11,xp:3, y:1.3, cat:'elite',from:200, name:'Hive',   behavior:'split',geo:geoHive,mat:matHive,eyes:[.42,.9,.3,1],w:2.0},
   charger: {r:1.0,hp:70, spd:5.0, dmg:16,xp:3, y:1.0, cat:'elite',from:260, name:'Charger',behavior:'charge',geo:geoCharger,mat:matCharger,eyes:[.32,.95,.4,1],w:1.6},
   spitter: {r:1.1,hp:90, spd:3.8, dmg:12,xp:3, y:1.5, cat:'elite',from:320, name:'Spitter',behavior:'range',geo:geoSpitter,mat:matSpitter,shards:4,eyes:[.4,.9,.3,1],w:1.9},
+  leaper:  {r:0.9,hp:42, spd:9.0, dmg:11,xp:2, y:0.9, cat:'small',from:130, name:'Leaper', behavior:'leap', geo:geoStinger,mat:matStinger,eyes:[.3,.6,.35,.9],w:1.4},
+  assassin:{r:1.0,hp:68, spd:8.5, dmg:15,xp:3, y:1.0, cat:'elite',from:300, name:'Assassin',behavior:'blink',geo:geoCharger,mat:matCharger,eyes:[.32,.95,.4,1],w:1.6},
   boss:    {r:3.0,hp:650,spd:3.1, dmg:30,xp:30,y:3.1, cat:'boss', from:12,  name:'Warden'},
+  trickster:{r:2.4,hp:1400,spd:3.4,dmg:28,xp:35,y:2.4,cat:'boss',from:360, name:'Trickster',geo:geoGolem,mat:matGolem,coreMat:matGolemCore,eyes:[.7,1.3,.5,1.4],w:4.0},
+  shaman:  {r:2.6,hp:1700,spd:2.6,dmg:30,xp:40,y:2.6, cat:'boss', from:540, name:'Shaman',geo:geoColossus,mat:matColossus,coreMat:matColossusCore,shards:6,eyes:[.8,1.5,.6,1.6],w:4.4},
   golem:   {r:1.9,hp:520,spd:2.7, dmg:26,xp:9, y:1.9, cat:'boss', from:150, name:'Golem',  behavior:'slow', geo:geoGolem,mat:matGolem,coreMat:matGolemCore,eyes:[.7,1.3,.5,1.4],w:3.6},
   colossus:{r:4.0,hp:2000,spd:2.2,dmg:34,xp:45,y:4.0, cat:'boss', from:480, name:'Colossus',behavior:'summon',geo:geoColossus,mat:matColossus,coreMat:matColossusCore,shards:6,eyes:[1.1,3.2,1,2.6],w:6.5},
   overlord:{r:4.4,hp:2800,spd:2.4,dmg:38,xp:60,y:4.4, cat:'boss', from:600, name:'Overlord',behavior:'overlord',geo:geoOverlord,mat:matOverlord,coreMat:matOverlordCore,shards:8,eyes:[1.3,3.6,1.1,3],w:7},
 };
 const isBossType=t=>ETYPE[t].cat==='boss';
 // threat tier 1..5 → clear "how strong" labels above each enemy
-const TIER={grub:1,dart:1,stinger:1,wraith:2,brute:2,hive:2,charger:3,spitter:3,boss:3,golem:4,colossus:5,overlord:5};
+const TIER={grub:1,dart:1,stinger:1,leaper:2,wraith:2,brute:2,hive:2,charger:3,spitter:3,assassin:3,boss:3,golem:4,trickster:4,colossus:5,shaman:5,overlord:5};
 const TIERCOL=['#9AA0BC','#7CFF9E','#FFD23D','#FF9A3D','#FF4F66'];
 const labelCache={};
 function labelTex(type){if(labelCache[type])return labelCache[type];
@@ -924,7 +928,7 @@ function addLabel(hpbar,type){const big=ETYPE[type].cat==='boss';const lh=big?1.
   lab.scale.set(lh*asp,lh,1);lab.position.y=big?1.2:0.64;lab.renderOrder=1000;hpbar.add(lab);}
 const MAXE=isMobile?46:80; // hard cap on concurrent enemies
 /* ---- real 3D monster models (Quaternius, CC0) ---- */
-const MODEL_MAP={grub:'Frog',dart:'Fish',stinger:'Birb',wraith:'BlueDemon',brute:'Orc',hive:'Cactoro',charger:'Dino',spitter:'Alien',boss:'Demon',golem:'Yeti',colossus:'MushroomKing',overlord:'Orc_Skull'};
+const MODEL_MAP={grub:'Frog',dart:'Fish',stinger:'Birb',wraith:'BlueDemon',brute:'Orc',hive:'Cactoro',charger:'Dino',spitter:'Alien',leaper:'Bunny',assassin:'Ninja',boss:'Demon',golem:'Yeti',trickster:'Monkroose',shaman:'Tribal',colossus:'MushroomKing',overlord:'Orc_Skull'};
 const MODELS={};const MODELINFO={};
 function loadModels(){const loader=new GLTFLoader();const names=[...new Set(Object.values(MODEL_MAP))];
   return Promise.all(names.map(n=>loader.loadAsync('/models/'+n+'.glb')
@@ -947,9 +951,9 @@ function graftModel(g,type){const mi=MODELINFO[type],M=mi&&MODELS[MODEL_MAP[type
 function poolBuild(type,n){const a=[];for(let i=0;i<n;i++)a.push(buildEnemy(type));return a;}
 let enemyPool={};
 function initEnemyPools(){enemyPool={
-  grub:poolBuild('grub',24),dart:poolBuild('dart',14),stinger:poolBuild('stinger',16),wraith:poolBuild('wraith',16),
-  brute:poolBuild('brute',10),hive:poolBuild('hive',8),charger:poolBuild('charger',8),spitter:poolBuild('spitter',8),
-  boss:poolBuild('boss',3),golem:poolBuild('golem',3),colossus:poolBuild('colossus',2),overlord:poolBuild('overlord',2),
+  grub:poolBuild('grub',24),dart:poolBuild('dart',14),stinger:poolBuild('stinger',16),wraith:poolBuild('wraith',16),leaper:poolBuild('leaper',12),
+  brute:poolBuild('brute',10),hive:poolBuild('hive',8),charger:poolBuild('charger',8),spitter:poolBuild('spitter',10),assassin:poolBuild('assassin',8),
+  boss:poolBuild('boss',3),golem:poolBuild('golem',2),trickster:poolBuild('trickster',2),colossus:poolBuild('colossus',2),shaman:poolBuild('shaman',2),overlord:poolBuild('overlord',2),
 };}
 function poolMesh(geo,mat,n,cast){const a=[];for(let i=0;i<n;i++){const m=new THREE.Mesh(geo,mat);m.visible=false;m.castShadow=!!cast&&!isMobile;scene.add(m);a.push(m);}return a;}
 const geoEbullet=new THREE.SphereGeometry(0.5,10,10);
@@ -1007,6 +1011,10 @@ const player2=new THREE.Group();scene.add(player2);player2.visible=false;
 const p2core=new THREE.Mesh(new THREE.IcosahedronGeometry(1.05,1),new THREE.MeshStandardMaterial({color:0xEAFFF7,emissive:0x3FE0C5,emissiveIntensity:2.1,roughness:.25,metalness:.1}));p2core.castShadow=!isMobile;player2.add(p2core);
 const p2shell=new THREE.Mesh(new THREE.IcosahedronGeometry(1.5,0),new THREE.MeshStandardMaterial({color:0x1F8F7C,emissive:0x3FE0C5,emissiveIntensity:.8,wireframe:true,transparent:true,opacity:.5}));player2.add(p2shell);
 const p2light=new THREE.PointLight(0x3FE0C5,2.4,30,1.8);p2light.position.y=2.4;scene.add(p2light);
+/* ground footprint markers — show each player's true ground position under the floating body (kills telegraph parallax) */
+const geoFoot=new THREE.RingGeometry(0.78,1.02,32);
+function makeFoot(col){const m=new THREE.Mesh(geoFoot,new THREE.MeshBasicMaterial({color:col,transparent:true,opacity:.6,side:THREE.DoubleSide,depthWrite:false,toneMapped:false}));m.rotation.x=-Math.PI/2;m.position.y=.06;m.visible=false;scene.add(m);return m;}
+const pmark=makeFoot(0xFFB13D),p2mark=makeFoot(0x3FE0C5);
 
 /* nova ring */
 const novaRing=new THREE.Mesh(new THREE.RingGeometry(1,1.22,52),
@@ -1081,6 +1089,7 @@ function newRun(mode,clevel){
     speed:17*(1+.04*fr('swift')),dmgMul:1+.06*fr('pow'),cdMul:1,magnet:6*(1+.18*fr('mag')),
     regen:1+.3*fr('mend'),crit:.05,greed:1+.15*fr('greed'),hitFlash:0,bossN:0,outFrac:0,
     mode,clevel,won:false,coop:false,isHost:false,p2:null,down:false,enemyId:1,
+    cmod:(mode==='campaign'?campEntry(clevel).mod:null),cname:(mode==='campaign'?campEntry(clevel).name:''),
     weapons:{bolt:1},passives:{},timers:{bolt:0,nova:0},
     wave:0,wlevel:(mode==='campaign'?clevel:1),waveState:'break',waveTimer:2.2,isBossWave:false,spawnQueue:0,batchCd:0,waveRoster:['grub'],bossE:null,telegraphs:[],
     enemies:[],bolts:[],ebullets:[],orbs:[],coinDrops:[],over:false};
@@ -1103,11 +1112,15 @@ function spawnEnemy(type,fx,fz){
   if(fx!==undefined){x=clamp(fx,-ARENA,ARENA);z=clamp(fz,-ARENA,ARENA);}
   else{const a=Math.random()*TAU,dist=rand(46,62);x=clamp(ST.px+Math.cos(a)*dist,-ARENA,ARENA);z=clamp(ST.pz+Math.sin(a)*dist,-ARENA,ARENA);}
   const m=ST.t/60;
-  const hp=isBossType(type)
+  let hp=isBossType(type)
     ? d.hp*(1+((ST.wlevel||1)-1)*0.45)*(1+Math.min(.6,m*0.03))
     : d.hp*hpScale();
+  // campaign modifiers: elite = fewer but tougher, fast = quicker
+  let spM=1;
+  if(ST.cmod==='elite'&&!isBossType(type)){hp*=1.45;spM=0.95;}
+  else if(ST.cmod==='fast'){spM=1.28;}
   const e={id:ST.enemyId++,type,g,x,z,r:d.r,y:d.y,hp,maxhp:hp,dmg:d.dmg*(1+((ST.wlevel||1)-1)*0.14)*(1+Math.min(1.0,ST.t/520)),
-    spd:d.spd*(1+Math.min(.8,ST.t/60*.05))*rand(.9,1.1),xp:d.xp,hitCd:0,bladeCd:0,ph:Math.random()*TAU,flash:0,
+    spd:d.spd*spM*(1+Math.min(.8,ST.t/60*.05))*rand(.9,1.1),xp:d.xp,hitCd:0,bladeCd:0,ph:Math.random()*TAU,flash:0,
     behavior:d.behavior,shootCd:rand(1.4,3),chargeCd:rand(2,4),dashT:0,summonCd:5};
   g.visible=true;g.userData.hpbar.visible=true;g.position.set(x,d.y,z);g.scale.setScalar(1);
   ST.enemies.push(e);return e;
@@ -1116,11 +1129,31 @@ const unlockedOf=cat=>{const now=ST.t,out=[];for(const k in ETYPE)if(ETYPE[k].ca
 const pickOne=arr=>arr[Math.floor(Math.random()*arr.length)];
 
 /* ---- wave / level director ---- */
-const BOSS_ORDER=['boss','golem','colossus','overlord'];
+const BOSS_ORDER=['boss','golem','trickster','colossus','shaman','overlord'];
+// Named campaign levels with a distinct twist each, so it isn't the same fight every time.
+// mod: swarm=more, smaller mobs · fast=quicker mobs · elite=fewer but tougher · null=straight fight
+const CAMPAIGN=[
+  {name:'Ember Dawn',    boss:'boss',     mod:null,   tip:'The swarm wakes.'},
+  {name:'Rising Tide',   boss:'boss',     mod:'swarm', tip:'They come in numbers.'},
+  {name:'Frost Reach',   boss:'golem',    mod:'fast',  tip:'Everything moves quicker.'},
+  {name:'Glacier Maw',   boss:'golem',    mod:'elite', tip:'Fewer foes, far tougher.'},
+  {name:'Hall of Mirrors',boss:'trickster',mod:'swarm',tip:'The Trickster blinks and multiplies.'},
+  {name:'Sleight of Hand',boss:'trickster',mod:'fast', tip:'Blink-hunters close fast.'},
+  {name:'Spore Fields',  boss:'colossus', mod:'swarm', tip:'Mind the puddles.'},
+  {name:'Fungal Deep',   boss:'colossus', mod:'elite', tip:'Elites guard the King.'},
+  {name:'Bone Totems',   boss:'shaman',   mod:'fast',  tip:'Totems raise ranged casters.'},
+  {name:'Cursed Grove',  boss:'shaman',   mod:'elite', tip:'Heavy hitters only.'},
+  {name:'Void Gate',     boss:'overlord', mod:'fast',  tip:'Bullet-hell, at speed.'},
+  {name:'The Overlord',  boss:'overlord', mod:'elite', tip:'The final trial.'},
+];
+function campEntry(lv){const base=CAMPAIGN[Math.min(lv,CAMPAIGN.length)-1];
+  if(lv<=CAMPAIGN.length)return base;
+  // past the authored levels: keep cycling the endgame with escalating names
+  const b=BOSS_ORDER[(lv-1)%BOSS_ORDER.length];return {name:'Abyss '+(lv-CAMPAIGN.length),boss:b,mod:(lv%2?'fast':'elite'),tip:'The swarm never ends.'};}
 function rosterForLevel(lv){const r=['grub','dart'];
-  if(lv>=2)r.push('stinger','brute');
+  if(lv>=2)r.push('stinger','brute','leaper');
   if(lv>=3)r.push('wraith','hive','charger');
-  if(lv>=4)r.push('spitter');
+  if(lv>=4)r.push('spitter','assassin');
   return r;}
 function waveCount(wave,lv){return Math.min(40,6+wave*2+lv*3);}
 function bannerMsg(txt,sub){const b=$('centerBanner');if(!b)return;b.querySelector('.cb-t').textContent=txt;b.querySelector('.cb-s').textContent=sub||'';
@@ -1131,7 +1164,7 @@ function startWave(){
   else{ST.wlevel=Math.floor((ST.wave-1)/5)+1;ST.isBossWave=(ST.wave%5===0);}
   ST.waveState='active';
   if(ST.isBossWave){
-    const btype=BOSS_ORDER[Math.min(ST.wlevel-1,BOSS_ORDER.length-1)];
+    const btype=ST.mode==='campaign'?campEntry(ST.clevel).boss:BOSS_ORDER[Math.min(ST.wlevel-1,BOSS_ORDER.length-1)];
     const b=spawnEnemy(btype);
     if(b){b.isWaveBoss=true;b.atkSeq=0;b.spd*=0.85;ST.bossE=b;
       // scale the boss to the player's current power so a strong build meets a tougher boss
@@ -1139,8 +1172,11 @@ function startWave(){
       b.maxhp*=sc;b.hp=b.maxhp;b.dmg*=1+Math.min(1.1,(pw-1)*0.12);b.atkCd=Math.max(1.6,2.6-(pw-1)*0.32);
       beep(64,.6,'sawtooth',.08,-24);bannerMsg('BOSS',ETYPE[btype].name);showBossBar(b);ST.shake=Math.max(ST.shake,.7);}
   }else{
-    ST.waveRoster=rosterForLevel(ST.wlevel);ST.spawnQueue=waveCount(ST.wave,ST.wlevel);ST.batchCd=0;hideBossBar();
-    bannerMsg('WAVE '+ST.wave,'Level '+ST.wlevel);}
+    let roster=rosterForLevel(ST.wlevel),cnt=waveCount(ST.wave,ST.wlevel);
+    if(ST.cmod==='swarm'){roster=roster.concat(['grub','dart','leaper']);cnt=Math.floor(cnt*1.5);}
+    else if(ST.cmod==='elite'){cnt=Math.max(3,Math.floor(cnt*0.6));}
+    ST.waveRoster=roster;ST.spawnQueue=cnt;ST.batchCd=0;hideBossBar();
+    bannerMsg('WAVE '+ST.wave,ST.mode==='campaign'?ST.cname:('Level '+ST.wlevel));}
 }
 function clearWave(){
   if(ST.isBossWave){for(const e of ST.enemies)if(!e.dead)killEnemy(e);ST.bossE=null;hideBossBar();}
@@ -1198,12 +1234,24 @@ function bossAttack(e){const dx=ST.px-e.x,dz=ST.pz-e.z,dd=Math.hypot(dx,dz)||1,n
     if(a===0)summonAdds(e,'wraith',3);
     else if(a===1){for(let i=0;i<3;i++)puddle(ST.px+rand(-11,11),ST.pz+rand(-11,11),5,4,dm*.4);}
     else radialVolley(e,14,dm*.42,seq*0.4);
+  }else if(e.type==='trickster'){ // MONKROOSE — blink + spiral + leapers
+    const a=seq%3;
+    if(a===0){spawnParts(e.x,1,e.z,0x9D5CFF,20);e.x=ST.px+rand(-9,9);e.z=ST.pz+rand(-9,9);spawnParts(e.x,1,e.z,0x9D5CFF,20);radialVolley(e,12,dm*.4);}
+    else if(a===1)spiralVolley(e,18,dm*.4);
+    else summonAdds(e,'leaper',3);
+  }else if(e.type==='shaman'){ // TRIBAL — totems + cross slam + puddles
+    const a=seq%3;
+    if(a===0){for(let i=0;i<2;i++){const t=spawnEnemy('spitter',e.x+rand(-9,9),e.z+rand(-9,9));if(t){t.summoned=true;t.spd=0;t.behavior='range';}}}
+    else if(a===1)crossSlam(e,dm*1.3);
+    else{for(let i=0;i<4;i++)puddle(ST.px+rand(-12,12),ST.pz+rand(-12,12),5,4,dm*.4);radialVolley(e,10,dm*.4);}
   }else{                       // OVERLORD — bullet-hell caster (hardest): double ring / wide cone / summon+slam
     const a=seq%3;
     if(a===0){radialVolley(e,16,dm*.42,seq*0.25);radialVolley(e,16,dm*.42,seq*0.25+TAU/32);}
     else if(a===1)coneVolley(e,nx,nz,1.4,9,dm*.45);
-    else{summonAdds(e,'brute',2);addTelegraph(ST.px,ST.pz,e.r*2.4,1,dm*1.6);}
+    else{summonAdds(e,'assassin',2);addTelegraph(ST.px,ST.pz,e.r*2.4,1,dm*1.6);}
   }}
+function spiralVolley(e,n,dmg){for(let i=0;i<n;i++){const a=i*0.55;fireShot(e,Math.cos(a),Math.sin(a),dmg,18+i*0.7);}beep(300,.2,'square',.03,-70);}
+function crossSlam(e,dmg){const cx=ST.px,cz=ST.pz;for(const d of [[1,0],[-1,0],[0,1],[0,-1]])for(let k=1;k<=3;k++)addTelegraph(cx+d[0]*k*5,cz+d[1]*k*5,3.4,.45+k*.22,dmg);}
 function playerPower(){let wl=0;for(const w in ST.weapons)wl+=ST.weapons[w];let pl=0;for(const p in ST.passives)pl+=ST.passives[p];
   return ST.dmgMul*(1+wl*0.10)*(1+pl*0.05)/Math.max(0.55,ST.cdMul);}
 function fireEbullet(e,nx,nz){const mesh=take(ebulletMeshes);if(!mesh)return;
@@ -1291,6 +1339,7 @@ function update(dt){
     ST.px-=ST.px*inv*pull;ST.pz-=ST.pz*inv*pull;ST.hp-=9*dt;ST.hitFlash=Math.max(ST.hitFlash,.4);}
   ST.outFrac=clamp((Math.hypot(ST.px,ST.pz)-ARENA*0.84)/(ARENA*0.28),0,1);
   player.position.set(ST.px,1.4+Math.sin(ST.t*3)*.12,ST.pz);
+  pmark.visible=!ST.down;pmark.position.set(ST.px,.06,ST.pz);
   pcore.rotation.y+=dt*1.2;pcore.rotation.x+=dt*.6;pshell.rotation.y-=dt*.8;
   const puls=1+Math.sin(ST.t*6)*.04;pshell.scale.setScalar(puls);
   emberLight.position.set(ST.px,2.6,ST.pz);
@@ -1303,6 +1352,7 @@ function update(dt){
       let nx2=p.px+m2x*ST.speed*dt,nz2=p.pz+m2z*ST.speed*dt;const rr2=Math.hypot(nx2,nz2),HD=ARENA*1.35;if(rr2>HD){nx2*=HD/rr2;nz2*=HD/rr2;}p.px=nx2;p.pz=nz2;
       p.hp=Math.min(p.maxhp,p.hp+ST.regen*dt);if(p.iframe>0)p.iframe-=dt;}
     player2.position.set(p.px,1.4+Math.sin(ST.t*3+1)*.12,p.pz);player2.visible=true;p2core.rotation.y+=dt*1.2;p2shell.rotation.y-=dt*.8;p2light.position.set(p.px,2.6,p.pz);
+    p2mark.visible=!p.down;p2mark.position.set(p.px,.06,p.pz);
     fireP2(dt);
     NET.acc+=dt;if(NET.acc>=0.066){NET.acc=0;netBroadcast();}}
   waveManager(dt);fire(dt);updateTelegraphs(dt);
@@ -1343,6 +1393,14 @@ function update(dt){
     }else if(beh==='zig'){
       const p=Math.sin(e.ph*2.2)*.5;
       e.x+=(nx*e.spd+ -nz*e.spd*p)*dt;e.z+=(nz*e.spd+ nx*e.spd*p)*dt;
+    }else if(beh==='leap'){ // Leaper — creeps, then hops at you
+      e.leapCd=(e.leapCd==null?rand(1,2):e.leapCd)-dt;
+      if(e.dashT>0){e.dashT-=dt;e.x+=e.ddx*22*dt;e.z+=e.ddz*22*dt;}
+      else{e.x+=nx*e.spd*.45*dt;e.z+=nz*e.spd*.45*dt;if(e.leapCd<=0&&d<28){e.dashT=.34;e.ddx=nx;e.ddz=nz;e.leapCd=rand(1.3,2.1);}}
+    }else if(beh==='blink'){ // Assassin — blinks in on you
+      e.blinkCd=(e.blinkCd==null?rand(1.5,3):e.blinkCd)-dt;
+      if(e.blinkCd<=0&&d>9){spawnParts(e.x,1,e.z,0x9D5CFF,12);e.x=targX+rand(-4,4);e.z=targZ+rand(-4,4);spawnParts(e.x,1,e.z,0x9D5CFF,12);e.blinkCd=rand(2,3.4);}
+      else{e.x+=nx*e.spd*dt;e.z+=nz*e.spd*dt;}
     }else{
       e.x+=nx*e.spd*dt+Math.cos(e.ph)*.4*dt;e.z+=nz*e.spd*dt+Math.sin(e.ph)*.4*dt;
     }
@@ -1515,7 +1573,7 @@ function setState(s){state=s;
   $('gameover').classList.toggle('hidden',s!=='over');
   if(s==='pause'&&ST){const parts=[];for(const id in ST.weapons)parts.push(WEAPONS[id].name+' '+ST.weapons[id]);
     for(const id in ST.passives)parts.push(PASSIVES[id].name+' '+ST.passives[id]);$('pauseBuild').textContent=parts.join(' · ');}
-  if(s!=='run')player2.visible=false;
+  if(s!=='run'){player2.visible=false;pmark.visible=false;p2mark.visible=false;}
   if(s==='home'){clearScene();renderHome();}if(s==='skins')renderSkins();if(s==='forge')renderForge();if(s==='awards')renderAwards();
   if(s==='profile')renderProfile();if(s==='ranks')renderLeaderboard();if(s==='levels')renderLevels();
   syncWallets();
@@ -1528,16 +1586,16 @@ $('btnJoinRoom').onclick=()=>{$('duoJoin').classList.toggle('hidden');$('joinCod
 $('btnJoinGo').onclick=()=>{const c=($('joinCode').value||'').toUpperCase().trim();if(c.length<4){$('duoMsg').textContent='Enter the 4-letter code.';return;}$('duoMsg').textContent='Connecting…';netConnect(()=>netSend({t:'join',code:c}));};
 $('btnDuoStart').onclick=()=>{if(NET.role==='host'&&NET.peerHere)startCoopHost();};
 $('btnDuoBack').onclick=()=>{netReset();player2.visible=false;setState('home');};
-const BOSS_NAMES=['Warden','Golem','Colossus','Overlord'];
+const MOD_LABEL={swarm:'⚡ Swarm',fast:'💨 Fast',elite:'☠ Elite'};
 function renderLevels(){const path=$('levelPath');if(!path)return;const unlocked=SAVE.campaign.unlocked;
-  $('levelsNote').textContent='Cleared '+(unlocked-1)+' · next is Level '+unlocked;
+  $('levelsNote').textContent='Cleared '+(unlocked-1)+' · next is '+campEntry(unlocked).name;
   const show=Math.max(unlocked+2,10);path.innerHTML='';
   for(let n=1;n<=show;n++){const state=n<unlocked?'done':(n===unlocked?'current':'locked');
     if(n>1){const c=document.createElement('div');c.className='lvconn';path.appendChild(c);}
     const node=document.createElement('button');node.className='lvnode '+state;
-    const boss=BOSS_NAMES[Math.min(n-1,BOSS_NAMES.length-1)];
+    const ce=campEntry(n),boss=ETYPE[ce.boss].name,twist=ce.mod?(' · '+MOD_LABEL[ce.mod]):'';
     node.innerHTML='<div class="num">'+(state==='done'?'✓':(state==='locked'?'🔒':n))+'</div>'+
-      '<div class="li"><div class="ln">Level '+n+'</div><div class="ld">'+(state==='locked'?'Locked':('4 waves · boss: '+boss))+'</div></div>';
+      '<div class="li"><div class="ln">'+n+'. '+ce.name+'</div><div class="ld">'+(state==='locked'?'Locked':('boss: '+boss+twist))+'</div></div>';
     if(state!=='locked')node.onclick=()=>startRun('campaign',n);
     path.appendChild(node);}
 }
@@ -1686,7 +1744,7 @@ function startRun(mode,clevel){mode=mode||'free';clevel=clevel||1;lastRun={mode,
 function winCampaign(){if(ST.over)return;ST.won=true;
   for(const e of ST.enemies)if(!e.dead)killEnemy(e);ST.bossE=null;hideBossBar();clearTelegraphs();
   if(SAVE.campaign.unlocked<ST.clevel+1){SAVE.campaign.unlocked=ST.clevel+1;persist();}
-  bannerMsg('LEVEL '+ST.clevel,'COMPLETE');endRun();}
+  bannerMsg(ST.cname||('LEVEL '+ST.clevel),'COMPLETE');endRun();}
 function endRun(){if(ST.over)return;ST.over=true;
   if(ST.coop&&ST.isHost){netBroadcast();player2.visible=false;}
   const earned=Math.floor((ST.coins+Math.floor(ST.t/20)+ST.level*2)*ST.greed);SAVE.coins+=earned;
@@ -1704,7 +1762,7 @@ function endRun(){if(ST.over)return;ST.over=true;
     submitScore({t:Math.floor(ST.t),k:ST.kills,l:ST.level,score:sc});}
   persist();ST.shake=1.2;
   const won=ST.won;
-  $('goEyebrow').textContent=won?('Level '+ST.clevel):'Run ended';
+  $('goEyebrow').textContent=won?(ST.cname||('Level '+ST.clevel)):'Run ended';
   $('goTitle').innerHTML=won?'Level <span class="e">complete!</span>':'The swarm <span class="e">takes you</span>';
   $('goStats').innerHTML='<div class="c"><div class="k">'+(ST.mode==='campaign'?'Level':'Survived')+'</div><div class="v num">'+(ST.mode==='campaign'?ST.clevel:fmtTime(ST.t))+'</div></div>'+
     '<div class="c"><div class="k">Kills</div><div class="v num">'+ST.kills+'</div></div>'+
@@ -1816,6 +1874,7 @@ function guestFrame(dt){const st=NET.state;
     player.position.set(st.p1[0],1.4+Math.sin(idleT*3)*.1,st.p1[1]);player.visible=st.p1[4]?false:true;
     GUEST.px+=(st.p2[0]-GUEST.px)*Math.min(1,4*dt);GUEST.pz+=(st.p2[1]-GUEST.pz)*Math.min(1,4*dt);
     player2.position.set(GUEST.px,1.4+Math.sin(idleT*3+1)*.1,GUEST.pz);player2.visible=st.p2[4]?false:true;
+    pmark.visible=!st.p1[4];pmark.position.set(st.p1[0],.06,st.p1[1]);p2mark.visible=!st.p2[4];p2mark.position.set(GUEST.px,.06,GUEST.pz);
     p2core.rotation.y+=dt;p2light.position.set(GUEST.px,2.6,GUEST.pz);
     pcore.rotation.y+=dt;emberLight.position.set(st.p1[0],2.6,st.p1[1]);
     guestSyncEnemies(st.en,dt);guestSyncOrbs(st.orbs||[]);guestSyncTele(st.tg||[]);guestHud(st);
@@ -1869,6 +1928,8 @@ loadModels().then(finishBoot).catch(e=>{console.error('boot load error',e);finis
 
 /* test hooks */
 window.__ST=()=>ST;window.__state=()=>state;window.__startRun=startRun;window.__update=update;window.__keys=keys;window.__SAVE=()=>SAVE;window.__setState=setState;
+window.__spawnBoss=(t)=>{const b=spawnEnemy(t);if(b){b.isWaveBoss=true;b.atkSeq=0;ST.bossE=b;showBossBar(b);}return b?b.type:null;};
+window.__bossAttack=()=>{if(ST.bossE)bossAttack(ST.bossE);return ST.bossE&&ST.bossE.type;};
 </script>
 </body>
 </html>
