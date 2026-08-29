@@ -41,6 +41,11 @@
   #boundWarn{position:absolute;top:24%;left:0;right:0;text-align:center;display:none}
   #boundWarn .bw{display:inline-block;font-family:var(--cond);font-weight:700;font-size:clamp(20px,4.6vw,34px);letter-spacing:.12em;text-transform:uppercase;color:#FF6376;text-shadow:0 2px 20px rgba(0,0,0,.7);animation:bwpulse .7s ease-in-out infinite}
   @keyframes bwpulse{0%,100%{opacity:.5}50%{opacity:1}}
+  #tip{position:absolute;left:16px;top:calc(84px + var(--safe-t));max-width:min(280px,60vw);
+    display:flex;gap:8px;align-items:flex-start;background:rgba(20,23,38,.82);border:1px solid var(--line);border-left:3px solid var(--teal);
+    border-radius:10px;padding:8px 11px;transition:opacity .5s;opacity:0}
+  #tip .tk{font-family:var(--mono);font-size:9px;letter-spacing:.16em;color:var(--teal);margin-top:2px}
+  #tipText{font-family:var(--sans);font-size:12px;line-height:1.4;color:var(--ink)}
 
   .num{font-variant-numeric:tabular-nums}
   .mono{font-family:var(--mono)}
@@ -135,6 +140,24 @@
     box-shadow:0 10px 30px rgba(255,177,61,.32),inset 0 1px 0 rgba(255,255,255,.4)}
   .cta:active{transform:translateY(1px)}
   .cta .sub{display:block;font-family:var(--mono);font-weight:500;font-size:11px;letter-spacing:.2em;color:rgba(24,15,2,.7);margin-top:4px}
+  .cta2{margin-top:10px;font-size:20px;padding:13px;color:var(--teal);background:transparent;border:1px solid var(--line-2);box-shadow:none}
+  .cta2 .sub{color:var(--muted)}
+  .cta2:hover{border-color:var(--teal)}
+  /* level path */
+  .lvpath{display:flex;flex-direction:column;align-items:center;gap:0;padding:8px 0 20px}
+  .lvnode{position:relative;display:flex;align-items:center;gap:14px;width:100%;max-width:340px;pointer-events:auto;cursor:pointer;
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin:7px 0}
+  .lvnode.locked{opacity:.5;cursor:default}
+  .lvnode.current{border-color:var(--amber);box-shadow:0 0 0 1px var(--amber),0 8px 24px rgba(255,177,61,.16)}
+  .lvnode.done{border-color:rgba(63,224,197,.4)}
+  .lvnode .num{width:44px;height:44px;flex:0 0 auto;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-family:var(--cond);font-weight:700;font-size:20px;background:var(--panel-2);border:1px solid var(--line-2);color:var(--muted)}
+  .lvnode.done .num{background:radial-gradient(circle at 40% 36%,#0f3a30,#0b241d);border-color:var(--teal);color:var(--teal)}
+  .lvnode.current .num{background:radial-gradient(circle at 40% 36%,#5a3a10,#2a1c08);border-color:var(--amber);color:var(--amber)}
+  .lvnode .li{flex:1}
+  .lvnode .ln{font-family:var(--cond);font-weight:700;font-size:18px;letter-spacing:.03em;text-transform:uppercase}
+  .lvnode .ld{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px}
+  .lvconn{width:3px;height:16px;background:var(--line-2)}
 
   .quickrow{display:flex;gap:10px;margin:12px auto 0;width:100%;max-width:420px}
   .qbtn{flex:1;pointer-events:auto;cursor:pointer;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-sm);
@@ -349,6 +372,7 @@
   </div>
   <div id="centerBanner"><div class="cb-t">WAVE 1</div><div class="cb-s">Level 1</div></div>
   <div id="boundWarn"><div class="bw">⚠ Return to the arena</div></div>
+  <div id="tip"><span class="tk">TIP</span><span id="tipText"></span></div>
   <div id="hint">P pause · M sound</div>
   <div id="bottomhud">
     <div id="chips"></div>
@@ -381,7 +405,8 @@
         <div class="cell"><div class="k">Best Kills</div><div class="v num" id="bestKills">—</div></div>
       </div>
     </div>
-    <button class="cta" id="btnPlay">Ignite Run<span class="sub" id="playSub">Tap or press Enter</span></button>
+    <button class="cta" id="btnCampaign">Play Campaign<span class="sub">Clear levels — they get harder</span></button>
+    <button class="cta cta2" id="btnFree">Free Play<span class="sub">Endless · how far can you go?</span></button>
     <div class="quickrow">
       <button class="qbtn rel" id="btnDaily"><span class="ic">◈</span>Daily<span class="pip hidden" id="dailyPip"></span></button>
       <button class="qbtn" id="btnRanks"><span class="ic">▲</span>Ranks</button>
@@ -467,6 +492,19 @@
   <div class="backbar"><button class="backbtn" data-back>← Home</button></div>
 </div>
 
+<!-- CAMPAIGN LEVELS -->
+<div id="levels" class="screen hidden">
+  <div class="appbar">
+    <div class="brand"><div class="mk"></div><div class="nm">Campaign</div></div>
+    <div class="wallet"><div class="dot"></div><div class="amt num" id="walletLevels">0</div></div>
+  </div>
+  <div class="body"><div class="wrap">
+    <div class="shead"><h2>Levels</h2><span class="h" id="levelsNote">Clear each to unlock the next</span></div>
+    <div class="lvpath" id="levelPath"></div>
+  </div></div>
+  <div class="backbar"><button class="backbtn" data-back>← Home</button></div>
+</div>
+
 <!-- DAILY MODAL -->
 <div id="dailyModal" class="overlay hidden">
   <div class="modal center">
@@ -498,8 +536,8 @@
 <!-- GAME OVER -->
 <div id="gameover" class="overlay hidden">
   <div class="modal center">
-    <div class="eyebrow">Run ended</div>
-    <h2 style="margin-top:4px">The swarm <span class="e">takes you</span></h2>
+    <div class="eyebrow" id="goEyebrow">Run ended</div>
+    <h2 style="margin-top:4px" id="goTitle">The swarm <span class="e">takes you</span></h2>
     <div class="gstats" id="goStats"></div>
     <div class="newbest hidden" id="goBest">◆ New personal best</div>
     <div class="btnrow"><button class="btn" id="btnRetry">Run It Back</button><button class="btn ghost" id="btnHome">Home</button></div>
@@ -598,6 +636,7 @@ if(!SAVE.profile)SAVE.profile={name:'Player',av:randAvatar()};
 if(!SAVE.profile.av)SAVE.profile.av=randAvatar();
 if(!SAVE.token)SAVE.token=(Date.now().toString(36)+Math.random().toString(36).slice(2,10));
 SAVE.scores=SAVE.scores||[];
+SAVE.campaign=SAVE.campaign||{unlocked:1};
 SAVE.stats=Object.assign({totalKills:0,totalRuns:0,totalEmber:0,bestLevel:0},SAVE.stats||{});
 SAVE.achieved=SAVE.achieved||[];
 SAVE.missions=SAVE.missions||{day:-1,ids:[],prog:{},done:[]};
@@ -1001,14 +1040,16 @@ const PASSIVES={
   might:{name:'White Heat',max:5,d:'+10% damage'},haste:{name:'Quickened',max:5,d:'weapons fire 8% faster'},
   crit:{name:'Flashpoint',max:5,d:'+6% critical chance'},
 };
-function newRun(){
+function newRun(mode,clevel){
+  mode=mode||'free';clevel=clevel||1;
   const maxhp=100+15*fr('vit');
   ST={t:0,kills:0,coins:0,level:1,xp:0,xpNext:12,hp:maxhp,maxhp,
     px:0,pz:0,iframe:0,orbitAng:0,shake:0,pendingLU:0,
     speed:17*(1+.04*fr('swift')),dmgMul:1+.06*fr('pow'),cdMul:1,magnet:6*(1+.18*fr('mag')),
     regen:1+.3*fr('mend'),crit:.05,greed:1+.15*fr('greed'),hitFlash:0,bossN:0,outFrac:0,
+    mode,clevel,won:false,
     weapons:{bolt:1},passives:{},timers:{bolt:0,nova:0},
-    wave:0,wlevel:1,waveState:'break',waveTimer:2.2,isBossWave:false,spawnQueue:0,batchCd:0,waveRoster:['grub'],bossE:null,telegraphs:[],
+    wave:0,wlevel:(mode==='campaign'?clevel:1),waveState:'break',waveTimer:2.2,isBossWave:false,spawnQueue:0,batchCd:0,waveRoster:['grub'],bossE:null,telegraphs:[],
     enemies:[],bolts:[],ebullets:[],orbs:[],coinDrops:[],over:false};
 }
 function applyPassives(){const p=ST.passives;
@@ -1021,7 +1062,7 @@ function applyPassives(){const p=ST.passives;
 }
 
 /* ============ enemies ============ */
-function hpScale(){return 1+((ST.wlevel||1)-1)*0.5+Math.min(1.5,ST.t/360);}
+function hpScale(){return ST.mode==='campaign'?1+(ST.clevel-1)*0.35:1+((ST.wlevel||1)-1)*0.5+Math.min(1.5,ST.t/360);}
 function spawnEnemy(type,fx,fz){
   if(ST.enemies.length>=MAXE)return null;
   const d=ETYPE[type];const g=take(enemyPool[type]);if(!g)return null;
@@ -1032,7 +1073,7 @@ function spawnEnemy(type,fx,fz){
   const hp=isBossType(type)
     ? d.hp*(1+((ST.wlevel||1)-1)*0.45)*(1+Math.min(.6,m*0.03))
     : d.hp*hpScale();
-  const e={type,g,x,z,r:d.r,y:d.y,hp,maxhp:hp,dmg:d.dmg*(1+Math.min(2.6,ST.t/380)),
+  const e={type,g,x,z,r:d.r,y:d.y,hp,maxhp:hp,dmg:d.dmg*(1+((ST.wlevel||1)-1)*0.14)*(1+Math.min(1.0,ST.t/520)),
     spd:d.spd*(1+Math.min(.8,ST.t/60*.05))*rand(.9,1.1),xp:d.xp,hitCd:0,bladeCd:0,ph:Math.random()*TAU,flash:0,
     behavior:d.behavior,shootCd:rand(1.4,3),chargeCd:rand(2,4),dashT:0,summonCd:5};
   g.visible=true;g.userData.hpbar.visible=true;g.position.set(x,d.y,z);g.scale.setScalar(1);
@@ -1052,7 +1093,10 @@ function waveCount(wave,lv){return Math.min(40,6+wave*2+lv*3);}
 function bannerMsg(txt,sub){const b=$('centerBanner');if(!b)return;b.querySelector('.cb-t').textContent=txt;b.querySelector('.cb-s').textContent=sub||'';
   b.classList.remove('show');void b.offsetWidth;b.classList.add('show');}
 function startWave(){
-  ST.wave++;ST.wlevel=Math.floor((ST.wave-1)/5)+1;ST.isBossWave=(ST.wave%5===0);ST.waveState='active';
+  ST.wave++;
+  if(ST.mode==='campaign'){ST.wlevel=ST.clevel;ST.isBossWave=(ST.wave===5);}   // 4 waves + boss = one level
+  else{ST.wlevel=Math.floor((ST.wave-1)/5)+1;ST.isBossWave=(ST.wave%5===0);}
+  ST.waveState='active';
   if(ST.isBossWave){
     const btype=BOSS_ORDER[Math.min(ST.wlevel-1,BOSS_ORDER.length-1)];
     const b=spawnEnemy(btype);
@@ -1070,12 +1114,12 @@ function clearWave(){
   ST.waveState='break';ST.waveTimer=ST.isBossWave?5:3;
   const bonus=Math.floor((10+ST.wave*4)*ST.greed);ST.coins+=bonus;
   toast('Wave '+ST.wave+' cleared',ST.isBossWave?('◆ Level '+ST.wlevel+' complete · +'+bonus+' ember'):'+'+bonus+' ember','teal');
-  ST.telegraphs.length=0;
+  clearTelegraphs();
 }
 function waveManager(dt){
   if(ST.waveState==='break'){ST.waveTimer-=dt;if(ST.waveTimer<=0)startWave();return;}
   if(ST.waveState!=='active')return;
-  if(ST.isBossWave){ if(!ST.bossE||ST.bossE.dead)clearWave(); return; }
+  if(ST.isBossWave){ if(!ST.bossE||ST.bossE.dead){ if(ST.mode==='campaign')return winCampaign(); clearWave(); } return; }
   // normal wave: spawn in paced batches, then clear when board is empty
   if(ST.spawnQueue>0){ST.batchCd-=dt;
     if(ST.batchCd<=0){ST.batchCd=1.15;const n=Math.min(ST.spawnQueue,3+ST.wlevel);
@@ -1083,7 +1127,9 @@ function waveManager(dt){
   if(ST.spawnQueue<=0&&ST.enemies.length===0)clearWave();
 }
 /* ---- boss special attacks + telegraphs ---- */
-const teleMeshes=[];for(let i=0;i<16;i++){const m=new THREE.Mesh(new THREE.RingGeometry(0.86,1,44),new THREE.MeshBasicMaterial({color:0xFF4F66,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false,toneMapped:false}));m.rotation.x=-Math.PI/2;m.position.y=0.07;scene.add(m);teleMeshes.push(m);}
+// filled disc (radius 1) so the visible danger area === the damage radius exactly
+const teleMeshes=[];for(let i=0;i<16;i++){const m=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshBasicMaterial({color:0xFF4F66,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false,toneMapped:false}));m.rotation.x=-Math.PI/2;m.position.y=0.07;scene.add(m);teleMeshes.push(m);}
+function clearTelegraphs(){for(const m of teleMeshes)m.material.opacity=0;if(ST)ST.telegraphs.length=0;}
 function addTelegraph(x,z,r,delay,dmg){const mesh=teleMeshes.find(m=>m.material.opacity<=0)||teleMeshes[0];mesh.material.color.setHex(0xFF4F66);
   ST.telegraphs.push({x,z,r,t:delay,max:delay,dmg,mesh,done:false});}
 function puddle(x,z,r,dur,dmg){const mesh=teleMeshes.find(m=>m.material.opacity<=0)||teleMeshes[0];mesh.material.color.setHex(0x7CFF3D);
@@ -1183,7 +1229,7 @@ addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys[k]=true;
   else if(state==='pause'&&(k==='p'||k==='escape'))setState('run');
   if(k==='m'){SAVE.muted=!SAVE.muted;persist();}
   if(state==='levelup'&&['1','2','3'].includes(k)){const c=$('luCards').children[+k-1];if(c)c.click();}
-  if((state==='over'||state==='home')&&k==='enter')startRun();
+  if(k==='enter'){if(state==='over')$('btnRetry').click();else if(state==='home')startRun('free');}
   if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k))e.preventDefault();
 });
 addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
@@ -1332,7 +1378,7 @@ function update(dt){
   updateDamageNumbers(dt);updateHud();
 }
 const flashEl=$('flash');
-function hurtPlayer(dmg){const d=Math.max(1,Math.round(dmg));ST.hp-=d;ST.iframe=.7;ST.shake=.6;sfx.hurt();
+function hurtPlayer(dmg){const d=Math.max(1,Math.min(Math.round(dmg),Math.ceil(ST.maxhp*0.45)));ST.hp-=d;ST.iframe=.7;ST.shake=.6;sfx.hurt();
   spawnParts(ST.px,1.2,ST.pz,0xFF4F66,8);dmgNumber(ST.px,2.6,ST.pz,'-'+d,'player');
   ST.hitFlash=1;
   if(ST.hp<=0){ST.hp=0;endRun();}}
@@ -1375,6 +1421,26 @@ function updateHud(){$('hpbar').firstElementChild.style.width=(100*clamp(ST.hp/S
   if(ST.bossE&&!ST.bossE.dead)$('bossbar').querySelector('.bb-bar>span').style.width=(100*clamp(ST.bossE.hp/ST.bossE.maxhp,0,1))+'%';
   const of=ST.outFrac||0;boundGlowEl.style.opacity=(of*0.62).toFixed(3);boundWarnEl.style.display=of>0.12?'block':'none';}
 const boundGlowEl=$('boundGlow'),boundWarnEl=$('boundWarn');
+/* ---- cycling tips (corner) ---- */
+const TIPS=[
+  'Kite bosses in a circle — most of their attacks are dodgeable.',
+  'Red circles are incoming hits. Step off them before they flash.',
+  'Clear a wave, then breathe — the next one is on a short timer.',
+  'Bank ember each run, then spend it in the Forge for permanent power.',
+  'Every boss fights differently. Learn each one’s pattern.',
+  'Grab teal shards to level up and pick an upgrade.',
+  'The red ring is the arena edge — leaving it drains your health.',
+  'Stack the same weapon to make it hit far harder.',
+  'Green puddles linger — don’t stand in them.',
+  'Hearts heal you; coins are extra ember.',
+  'A stronger build makes bosses tougher, so keep dodging.',
+  'Customize your icon in Profile — it shows on the leaderboard.',
+];
+let _tipI=Math.floor(Math.random()*TIPS.length);
+const tipEl=$('tip'),tipTextEl=$('tipText');
+function showTip(){tipEl.style.opacity='0';
+  setTimeout(()=>{tipTextEl.textContent=TIPS[_tipI%TIPS.length];_tipI++;if(state==='run')tipEl.style.opacity='1';},380);}
+setInterval(()=>{if(state==='run')showTip();else tipEl.style.opacity='0';},9000);
 function showBossBar(b){const el=$('bossbar');el.classList.remove('hidden');
   $('bossName').textContent=(ETYPE[b.type].name||'BOSS').toUpperCase();
   $('bossTier').textContent='★'.repeat(TIER[b.type]||3);
@@ -1382,7 +1448,7 @@ function showBossBar(b){const el=$('bossbar');el.classList.remove('hidden');
 function hideBossBar(){$('bossbar').classList.add('hidden');}
 
 /* ============ screens ============ */
-const SCREENS=['home','skins','forge','awards','profile','ranks'];
+const SCREENS=['home','skins','forge','awards','profile','ranks','levels'];
 function setState(s){state=s;
   $('hud').style.display=(s==='run'||s==='levelup'||s==='pause')?'block':'none';
   for(const id of SCREENS)$(id).classList.toggle('hidden',s!==id);
@@ -1392,10 +1458,23 @@ function setState(s){state=s;
   if(s==='pause'){const parts=[];for(const id in ST.weapons)parts.push(WEAPONS[id].name+' '+ST.weapons[id]);
     for(const id in ST.passives)parts.push(PASSIVES[id].name+' '+ST.passives[id]);$('pauseBuild').textContent=parts.join(' · ');}
   if(s==='home'){clearScene();renderHome();}if(s==='skins')renderSkins();if(s==='forge')renderForge();if(s==='awards')renderAwards();
-  if(s==='profile')renderProfile();if(s==='ranks')renderLeaderboard();
+  if(s==='profile')renderProfile();if(s==='ranks')renderLeaderboard();if(s==='levels')renderLevels();
   syncWallets();
 }
-function syncWallets(){const v=Math.floor(SAVE.coins);['walletHome','walletSkins','walletForge','walletAwards','walletProfile','walletRanks'].forEach(id=>{const el=$(id);if(el)el.textContent=v;});}
+function syncWallets(){const v=Math.floor(SAVE.coins);['walletHome','walletSkins','walletForge','walletAwards','walletProfile','walletRanks','walletLevels'].forEach(id=>{const el=$(id);if(el)el.textContent=v;});}
+const BOSS_NAMES=['Warden','Golem','Colossus','Overlord'];
+function renderLevels(){const path=$('levelPath');if(!path)return;const unlocked=SAVE.campaign.unlocked;
+  $('levelsNote').textContent='Cleared '+(unlocked-1)+' · next is Level '+unlocked;
+  const show=Math.max(unlocked+2,10);path.innerHTML='';
+  for(let n=1;n<=show;n++){const state=n<unlocked?'done':(n===unlocked?'current':'locked');
+    if(n>1){const c=document.createElement('div');c.className='lvconn';path.appendChild(c);}
+    const node=document.createElement('button');node.className='lvnode '+state;
+    const boss=BOSS_NAMES[Math.min(n-1,BOSS_NAMES.length-1)];
+    node.innerHTML='<div class="num">'+(state==='done'?'✓':(state==='locked'?'🔒':n))+'</div>'+
+      '<div class="li"><div class="ln">Level '+n+'</div><div class="ld">'+(state==='locked'?'Locked':('4 waves · boss: '+boss))+'</div></div>';
+    if(state!=='locked')node.onclick=()=>startRun('campaign',n);
+    path.appendChild(node);}
+}
 function renderHome(){ensureMissions();
   $('bestTime').textContent=SAVE.bestTime?fmtTime(SAVE.bestTime):'—';
   $('bestKills').textContent=SAVE.bestKills||'—';
@@ -1532,10 +1611,16 @@ function clearScene(){for(const t in enemyPool)for(const g of enemyPool[t]){g.vi
   for(const m of boltMeshes)m.visible=false;for(const m of orbMeshes)m.visible=false;
   for(const m of coinMeshes)m.visible=false;for(const m of bladeMeshes)m.visible=false;for(const m of ebulletMeshes)m.visible=false;
   for(const p of parts)p.life=0;for(const d of dnActive)d.el.style.opacity='0';dnActive.length=0;flashEl.style.opacity='0';}
-function startRun(){clearScene();newRun();applyPassives();buildChips();
-  hideBossBar();for(const m of teleMeshes)m.material.opacity=0;
+let lastRun={mode:'free',clevel:1};
+function startRun(mode,clevel){mode=mode||'free';clevel=clevel||1;lastRun={mode,clevel};
+  clearScene();newRun(mode,clevel);applyPassives();buildChips();
+  hideBossBar();for(const m of teleMeshes)m.material.opacity=0;clearTelegraphs();
   boundGlowEl.style.opacity='0';boundWarnEl.style.display='none';
-  camera.position.set(CAM_OFF.x,CAM_OFF.y,CAM_OFF.z);setState('run');}
+  camera.position.set(CAM_OFF.x,CAM_OFF.y,CAM_OFF.z);setState('run');showTip();}
+function winCampaign(){if(ST.over)return;ST.won=true;
+  for(const e of ST.enemies)if(!e.dead)killEnemy(e);ST.bossE=null;hideBossBar();clearTelegraphs();
+  if(SAVE.campaign.unlocked<ST.clevel+1){SAVE.campaign.unlocked=ST.clevel+1;persist();}
+  bannerMsg('LEVEL '+ST.clevel,'COMPLETE');endRun();}
 function endRun(){if(ST.over)return;ST.over=true;
   const earned=Math.floor((ST.coins+Math.floor(ST.t/20)+ST.level*2)*ST.greed);SAVE.coins+=earned;
   let best=false;if(ST.t>SAVE.bestTime){SAVE.bestTime=ST.t;best=true;}if(ST.kills>SAVE.bestKills){SAVE.bestKills=ST.kills;best=true;}
@@ -1545,22 +1630,31 @@ function endRun(){if(ST.over)return;ST.over=true;
   if(ST.level>SAVE.stats.bestLevel)SAVE.stats.bestLevel=ST.level;
   const P=SAVE.missions.prog;P.kills+=ST.kills;P.time+=ST.t;P.ember+=earned;P.runs+=1;if(ST.level>P.level)P.level=ST.level;
   checkMissions();checkAchievements();
-  // record run to the leaderboard (local + submit to global board)
-  const sc=scoreOf(ST.t,ST.kills,ST.level);
-  SAVE.scores.push({t:Math.floor(ST.t),k:ST.kills,l:ST.level,score:sc});
-  SAVE.scores.sort((a,b)=>b.score-a.score);SAVE.scores=SAVE.scores.slice(0,10);
-  submitScore({t:Math.floor(ST.t),k:ST.kills,l:ST.level,score:sc});
-  persist();sfx.over();ST.shake=1.2;
-  $('goStats').innerHTML='<div class="c"><div class="k">Survived</div><div class="v num">'+fmtTime(ST.t)+'</div></div>'+
+  // leaderboard: only Free Play runs count toward the global board
+  if(ST.mode==='free'){const sc=scoreOf(ST.t,ST.kills,ST.level);
+    SAVE.scores.push({t:Math.floor(ST.t),k:ST.kills,l:ST.level,score:sc});
+    SAVE.scores.sort((a,b)=>b.score-a.score);SAVE.scores=SAVE.scores.slice(0,10);
+    submitScore({t:Math.floor(ST.t),k:ST.kills,l:ST.level,score:sc});}
+  persist();ST.shake=1.2;
+  const won=ST.won;
+  $('goEyebrow').textContent=won?('Level '+ST.clevel):'Run ended';
+  $('goTitle').innerHTML=won?'Level <span class="e">complete!</span>':'The swarm <span class="e">takes you</span>';
+  $('goStats').innerHTML='<div class="c"><div class="k">'+(ST.mode==='campaign'?'Level':'Survived')+'</div><div class="v num">'+(ST.mode==='campaign'?ST.clevel:fmtTime(ST.t))+'</div></div>'+
     '<div class="c"><div class="k">Kills</div><div class="v num">'+ST.kills+'</div></div>'+
-    '<div class="c"><div class="k">Level</div><div class="v num">'+ST.level+'</div></div>'+
+    '<div class="c"><div class="k">Player Lv</div><div class="v num">'+ST.level+'</div></div>'+
     '<div class="c"><div class="k">Ember Banked</div><div class="v num gold">+'+earned+'</div></div>';
-  $('goBest').classList.toggle('hidden',!best);
-  setTimeout(()=>setState('over'),700);
+  $('goBest').classList.toggle('hidden',!(best&&ST.mode==='free'));
+  $('btnRetry').textContent=won?'Next Level':'Run It Back';
+  if(won)beep(520,.12,'sine',.06,260),setTimeout(()=>beep(780,.16,'sine',.06,300),90);else sfx.over();
+  setTimeout(()=>setState('over'),won?900:700);
 }
 
 /* buttons */
-$('btnPlay').onclick=startRun;$('btnRetry').onclick=startRun;$('btnHome').onclick=()=>setState('home');
+$('btnCampaign').onclick=()=>setState('levels');
+$('btnFree').onclick=()=>startRun('free');
+$('btnRetry').onclick=()=>{ if(ST&&ST.won&&lastRun.mode==='campaign')startRun('campaign',Math.min(lastRun.clevel+1,SAVE.campaign.unlocked));
+  else startRun(lastRun.mode,lastRun.clevel); };
+$('btnHome').onclick=()=>setState('home');
 $('btnSkins').onclick=()=>setState('skins');$('btnForge').onclick=()=>setState('forge');
 $('btnAwards').onclick=()=>setState('awards');
 $('btnDaily').onclick=openDaily;
