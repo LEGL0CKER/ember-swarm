@@ -407,6 +407,7 @@
     </div>
     <button class="cta" id="btnCampaign">Play Campaign<span class="sub">Clear levels — they get harder</span></button>
     <button class="cta cta2" id="btnFree">Free Play<span class="sub">Endless · how far can you go?</span></button>
+    <button class="cta cta2" id="btnDuos" style="color:var(--violet)">Duos<span class="sub">Co-op · play with a friend</span></button>
     <div class="quickrow">
       <button class="qbtn rel" id="btnDaily"><span class="ic">◈</span>Daily<span class="pip hidden" id="dailyPip"></span></button>
       <button class="qbtn" id="btnRanks"><span class="ic">▲</span>Ranks</button>
@@ -490,6 +491,33 @@
     <div style="height:12px"></div>
   </div></div>
   <div class="backbar"><button class="backbtn" data-back>← Home</button></div>
+</div>
+
+<!-- DUOS -->
+<div id="duos" class="screen hidden">
+  <div class="appbar">
+    <div class="brand"><div class="mk"></div><div class="nm">Duos</div></div>
+    <div class="wallet"><div class="dot"></div><div class="amt num" id="walletDuos">0</div></div>
+  </div>
+  <div class="body"><div class="wrap" style="max-width:440px">
+    <div class="shead"><h2>Play Together</h2><span class="h">Co-op · 2 players</span></div>
+    <div id="duoPick">
+      <button class="cta" id="btnHostRoom">Host a Room<span class="sub">Create a code, share it</span></button>
+      <button class="cta cta2" id="btnJoinRoom">Join a Room<span class="sub">Enter a friend’s code</span></button>
+      <div id="duoJoin" class="hidden" style="margin-top:14px;display:flex;gap:10px">
+        <input id="joinCode" class="nameinput" style="margin:0;flex:1" maxlength="4" placeholder="CODE" />
+        <button class="btn" id="btnJoinGo">Join</button>
+      </div>
+      <div id="duoMsg" class="sub" style="text-align:center;margin-top:12px"></div>
+    </div>
+    <div id="duoLobby" class="hidden" style="text-align:center">
+      <div class="eyebrow" style="margin-top:8px">Room code</div>
+      <div id="roomCode" style="font-family:var(--cond);font-weight:700;font-size:64px;letter-spacing:.2em;color:var(--amber);margin:6px 0">----</div>
+      <div id="lobbyStatus" class="sub">Waiting for a friend to join…</div>
+      <div class="btnrow"><button class="btn" id="btnDuoStart" disabled>Start</button></div>
+    </div>
+  </div></div>
+  <div class="backbar"><button class="backbtn" id="btnDuoBack">← Home</button></div>
 </div>
 
 <!-- CAMPAIGN LEVELS -->
@@ -974,6 +1002,11 @@ function buildPlayerModel(s){
 }
 function applySkin(){const s=skinById(SAVE.skin);buildPlayerModel(s);emberLight.color.setHex(s.emis);}
 applySkin();
+/* second player (partner) — a distinct teal ember, shown only in Duos */
+const player2=new THREE.Group();scene.add(player2);player2.visible=false;
+const p2core=new THREE.Mesh(new THREE.IcosahedronGeometry(1.05,1),new THREE.MeshStandardMaterial({color:0xEAFFF7,emissive:0x3FE0C5,emissiveIntensity:2.1,roughness:.25,metalness:.1}));p2core.castShadow=!isMobile;player2.add(p2core);
+const p2shell=new THREE.Mesh(new THREE.IcosahedronGeometry(1.5,0),new THREE.MeshStandardMaterial({color:0x1F8F7C,emissive:0x3FE0C5,emissiveIntensity:.8,wireframe:true,transparent:true,opacity:.5}));player2.add(p2shell);
+const p2light=new THREE.PointLight(0x3FE0C5,2.4,30,1.8);p2light.position.y=2.4;scene.add(p2light);
 
 /* nova ring */
 const novaRing=new THREE.Mesh(new THREE.RingGeometry(1,1.22,52),
@@ -1047,7 +1080,7 @@ function newRun(mode,clevel){
     px:0,pz:0,iframe:0,orbitAng:0,shake:0,pendingLU:0,
     speed:17*(1+.04*fr('swift')),dmgMul:1+.06*fr('pow'),cdMul:1,magnet:6*(1+.18*fr('mag')),
     regen:1+.3*fr('mend'),crit:.05,greed:1+.15*fr('greed'),hitFlash:0,bossN:0,outFrac:0,
-    mode,clevel,won:false,
+    mode,clevel,won:false,coop:false,isHost:false,p2:null,down:false,enemyId:1,
     weapons:{bolt:1},passives:{},timers:{bolt:0,nova:0},
     wave:0,wlevel:(mode==='campaign'?clevel:1),waveState:'break',waveTimer:2.2,isBossWave:false,spawnQueue:0,batchCd:0,waveRoster:['grub'],bossE:null,telegraphs:[],
     enemies:[],bolts:[],ebullets:[],orbs:[],coinDrops:[],over:false};
@@ -1073,7 +1106,7 @@ function spawnEnemy(type,fx,fz){
   const hp=isBossType(type)
     ? d.hp*(1+((ST.wlevel||1)-1)*0.45)*(1+Math.min(.6,m*0.03))
     : d.hp*hpScale();
-  const e={type,g,x,z,r:d.r,y:d.y,hp,maxhp:hp,dmg:d.dmg*(1+((ST.wlevel||1)-1)*0.14)*(1+Math.min(1.0,ST.t/520)),
+  const e={id:ST.enemyId++,type,g,x,z,r:d.r,y:d.y,hp,maxhp:hp,dmg:d.dmg*(1+((ST.wlevel||1)-1)*0.14)*(1+Math.min(1.0,ST.t/520)),
     spd:d.spd*(1+Math.min(.8,ST.t/60*.05))*rand(.9,1.1),xp:d.xp,hitCd:0,bladeCd:0,ph:Math.random()*TAU,flash:0,
     behavior:d.behavior,shootCd:rand(1.4,3),chargeCd:rand(2,4),dashT:0,summonCd:5};
   g.visible=true;g.userData.hpbar.visible=true;g.position.set(x,d.y,z);g.scale.setScalar(1);
@@ -1114,6 +1147,7 @@ function clearWave(){
   ST.waveState='break';ST.waveTimer=ST.isBossWave?5:3;
   const bonus=Math.floor((10+ST.wave*4)*ST.greed);ST.coins+=bonus;
   toast('Wave '+ST.wave+' cleared',ST.isBossWave?('◆ Level '+ST.wlevel+' complete · +'+bonus+' ember'):'+'+bonus+' ember','teal');
+  if(ST.coop){if(ST.down){ST.down=false;ST.hp=Math.ceil(ST.maxhp*0.5);toast('Revived!','Back in the fight','teal');}if(ST.p2&&ST.p2.down){ST.p2.down=false;ST.p2.hp=Math.ceil(ST.p2.maxhp*0.5);}}
   clearTelegraphs();
 }
 function waveManager(dt){
@@ -1136,11 +1170,11 @@ function puddle(x,z,r,dur,dmg){const mesh=teleMeshes.find(m=>m.material.opacity<
   ST.telegraphs.push({x,z,r,t:dur,max:dur,dmg,mesh,done:false,linger:true,tickCd:.3});}
 function updateTelegraphs(dt){for(const tg of ST.telegraphs){tg.t-=dt;tg.mesh.position.set(tg.x,0.07,tg.z);tg.mesh.scale.set(tg.r,tg.r,tg.r);
     if(tg.linger){tg.mesh.material.opacity=.35+.12*Math.sin(ST.t*10);
-      tg.tickCd-=dt;if(tg.tickCd<=0){tg.tickCd=.4;if(((ST.px-tg.x)**2+(ST.pz-tg.z)**2)<tg.r*tg.r&&ST.iframe<=0)hurtPlayer(tg.dmg);}
+      tg.tickCd-=dt;if(tg.tickCd<=0){tg.tickCd=.4;aoeHit(tg.x,tg.z,tg.r,tg.dmg);}
       if(tg.t<=0)tg.done=true;
     }else{const p=1-Math.max(0,tg.t)/tg.max;tg.mesh.material.opacity=.25+.5*p;
       if(tg.t<=0&&!tg.done){tg.done=true;spawnParts(tg.x,0.6,tg.z,0xFF4F66,18);ST.shake=Math.max(ST.shake,.45);beep(90,.25,'sawtooth',.06,-40);
-        if(((ST.px-tg.x)**2+(ST.pz-tg.z)**2)<tg.r*tg.r&&ST.iframe<=0)hurtPlayer(tg.dmg);}}}
+        aoeHit(tg.x,tg.z,tg.r,tg.dmg);}}}
   ST.telegraphs=ST.telegraphs.filter(tg=>{if(!tg.done)return true;tg.mesh.material.opacity=0;return false;});}
 /* projectile + summon helpers */
 function fireShot(e,nx,nz,dmg,sp){const mesh=take(ebulletMeshes);if(!mesh)return;sp=sp||22;
@@ -1225,7 +1259,7 @@ function fire(dt){const T=ST.timers,W=ST.weapons;
 
 /* ============ input ============ */
 addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys[k]=true;
-  if(state==='run'&&(k==='p'||k==='escape'))setState('pause');
+  if(state==='run'&&!NET.active&&(k==='p'||k==='escape'))setState('pause');
   else if(state==='pause'&&(k==='p'||k==='escape'))setState('run');
   if(k==='m'){SAVE.muted=!SAVE.muted;persist();}
   if(state==='levelup'&&['1','2','3'].includes(k)){const c=$('luCards').children[+k-1];if(c)c.click();}
@@ -1263,6 +1297,14 @@ function update(dt){
   if(ml>.1&&Math.random()<.5)spawnParts(ST.px,.6,ST.pz,skinById(SAVE.skin).emis,1);
 
   ST.hp=Math.min(ST.maxhp,ST.hp+ST.regen*dt);ST.iframe-=dt;
+  // co-op: move + fire + regen partner (P2), broadcast state
+  if(ST.coop&&ST.isHost&&ST.p2){const p=ST.p2;
+    if(!p.down){let m2x=NET.guestInput.mx,m2z=NET.guestInput.mz;const ml2=Math.hypot(m2x,m2z);if(ml2>1){m2x/=ml2;m2z/=ml2;}
+      let nx2=p.px+m2x*ST.speed*dt,nz2=p.pz+m2z*ST.speed*dt;const rr2=Math.hypot(nx2,nz2),HD=ARENA*1.35;if(rr2>HD){nx2*=HD/rr2;nz2*=HD/rr2;}p.px=nx2;p.pz=nz2;
+      p.hp=Math.min(p.maxhp,p.hp+ST.regen*dt);if(p.iframe>0)p.iframe-=dt;}
+    player2.position.set(p.px,1.4+Math.sin(ST.t*3+1)*.12,p.pz);player2.visible=true;p2core.rotation.y+=dt*1.2;p2shell.rotation.y-=dt*.8;p2light.position.set(p.px,2.6,p.pz);
+    fireP2(dt);
+    NET.acc+=dt;if(NET.acc>=0.066){NET.acc=0;netBroadcast();}}
   waveManager(dt);fire(dt);updateTelegraphs(dt);
 
   if(ST.weapons.orbit){const s=WEAPONS.orbit.stat(ST.weapons.orbit);ST.orbitAng+=dt*2.6;
@@ -1281,7 +1323,8 @@ function update(dt){
   // enemies: behavior + movement + animation ("life")
   const cone=t=>t==='dart'||t==='stinger'||t==='wraith'||t==='charger';
   for(const e of ST.enemies){if(e.dead)continue;e.ph+=dt*4;if(e.bladeCd>0)e.bladeCd-=dt;if(e.flash>0)e.flash-=dt;
-    let dx=ST.px-e.x,dz=ST.pz-e.z;const d=Math.hypot(dx,dz)||1;const nx=dx/d,nz=dz/d;
+    const _tp=ST.coop?nearestPlayer(e.x,e.z):null;const targX=_tp?_tp.x:ST.px,targZ=_tp?_tp.z:ST.pz,targWho=_tp?_tp.who:1;
+    let dx=targX-e.x,dz=targZ-e.z;const d=Math.hypot(dx,dz)||1;const nx=dx/d,nz=dz/d;
     const beh=e.behavior;
     if(e.isWaveBoss){
       e.atkCd-=dt;
@@ -1334,7 +1377,7 @@ function update(dt){
     hb.quaternion.copy(camera.quaternion);
     const fill=hb.userData.fill;fill.scale.x=Math.max(.0001,w*frac);fill.position.x=-(w*(1-frac))/2;
     e.hitCd-=dt;
-    if(e.hitCd<=0&&ST.iframe<=0&&d<e.r+1.3){e.hitCd=.6;hurtPlayer(e.dmg);}
+    if(e.hitCd<=0&&d<e.r+1.3){ if(targWho===2){if(ST.p2&&!ST.p2.down&&(ST.p2.iframe||0)<=0){e.hitCd=.6;hurtPlayer(e.dmg,2);}} else if(!ST.down&&ST.iframe<=0){e.hitCd=.6;hurtPlayer(e.dmg,1);} }
   }
   ST.enemies=ST.enemies.filter(e=>!e.dead);
 
@@ -1368,9 +1411,10 @@ function update(dt){
 
   stepParticles(dt);
 
-  tmpV.set(ST.px,0,ST.pz).add(CAM_OFF);
+  const cx=(ST.coop&&ST.p2)?(ST.px+ST.p2.px)/2:ST.px, cz=(ST.coop&&ST.p2)?(ST.pz+ST.p2.pz)/2:ST.pz;
+  tmpV.set(cx,0,cz).add(CAM_OFF);
   if(ST.shake>0){tmpV.x+=rand(-1,1)*ST.shake;tmpV.z+=rand(-1,1)*ST.shake;ST.shake=Math.max(0,ST.shake-dt*1.6);}
-  camera.position.lerp(tmpV,Math.min(1,8*dt));camera.lookAt(ST.px,1,ST.pz);
+  camera.position.lerp(tmpV,Math.min(1,8*dt));camera.lookAt(cx,1,cz);
 
   if(ST.hitFlash>0)ST.hitFlash=Math.max(0,ST.hitFlash-dt*3.2);
   flashEl.style.opacity=(ST.hitFlash*0.85).toFixed(3);
@@ -1378,13 +1422,27 @@ function update(dt){
   updateDamageNumbers(dt);updateHud();
 }
 const flashEl=$('flash');
-function hurtPlayer(dmg){const d=Math.max(1,Math.min(Math.round(dmg),Math.ceil(ST.maxhp*0.45)));ST.hp-=d;ST.iframe=.7;ST.shake=.6;sfx.hurt();
-  spawnParts(ST.px,1.2,ST.pz,0xFF4F66,8);dmgNumber(ST.px,2.6,ST.pz,'-'+d,'player');
-  ST.hitFlash=1;
-  if(ST.hp<=0){ST.hp=0;endRun();}}
+function aoeHit(x,z,r,dmg){if(!ST.down&&ST.iframe<=0&&((ST.px-x)**2+(ST.pz-z)**2)<r*r)hurtPlayer(dmg,1);
+  if(ST.coop&&ST.p2&&!ST.p2.down&&(ST.p2.iframe||0)<=0&&((ST.p2.px-x)**2+(ST.p2.pz-z)**2)<r*r)hurtPlayer(dmg,2);}
+function hurtPlayer(dmg,who){who=who||1;
+  if(ST.coop&&who===2){const p=ST.p2;const d=Math.max(1,Math.min(Math.round(dmg),Math.ceil(p.maxhp*0.45)));p.hp-=d;p.iframe=.7;
+    spawnParts(p.px,1.2,p.pz,0xFF4F66,8);dmgNumber(p.px,2.6,p.pz,'-'+d,'player');
+    if(p.hp<=0){p.hp=0;p.down=true;toast('Partner down','Clear the wave to revive them','teal');if(ST.down)endRun();}
+    return;}
+  const d=Math.max(1,Math.min(Math.round(dmg),Math.ceil(ST.maxhp*0.45)));ST.hp-=d;ST.iframe=.7;ST.shake=.6;sfx.hurt();
+  spawnParts(ST.px,1.2,ST.pz,0xFF4F66,8);dmgNumber(ST.px,2.6,ST.pz,'-'+d,'player');ST.hitFlash=1;
+  if(ST.hp<=0){ST.hp=0; if(ST.coop){ST.down=true;toast('You are down','Your partner can revive you','teal');if(ST.p2.down)endRun();} else endRun();}}
 function gainXp(v){ST.xp+=v;sfx.gem();
   while(ST.xp>=ST.xpNext){ST.xp-=ST.xpNext;ST.level++;ST.xpNext=Math.floor(8+ST.level*4+Math.pow(ST.level,1.35));ST.pendingLU++;}
+  // co-op: auto-apply upgrades to the shared build (no blocking menu to keep both players in sync)
+  if(ST.coop){while(ST.pendingLU>0){ST.pendingLU--;autoUpgrade();}return;}
   if(ST.pendingLU>0&&state==='run'){ST.pendingLU--;openLevelUp();}}
+function autoUpgrade(){const pool=buildPool();if(!pool.length){ST.hp=Math.min(ST.maxhp,ST.hp+40);return;}
+  // prefer a new weapon, then any weapon upgrade, else a random talent
+  let pick=pool.find(p=>p.kind==='w'&&p.fresh)||pool.find(p=>p.kind==='w')||pool[Math.floor(Math.random()*pool.length)];
+  if(pick.kind==='w')ST.weapons[pick.id]=(ST.weapons[pick.id]|0)+1;
+  else{ST.passives[pick.id]=(ST.passives[pick.id]|0)+1;if(pick.id==='vigor'){ST.maxhp+=20;ST.hp=Math.min(ST.maxhp,ST.hp+20);if(ST.p2){ST.p2.maxhp+=20;ST.p2.hp=Math.min(ST.p2.maxhp,ST.p2.hp+20);}}applyPassives();}
+  buildChips();}
 
 /* ============ level up ============ */
 function buildPool(){const pool=[];const nw=Object.keys(ST.weapons).length;
@@ -1448,20 +1506,28 @@ function showBossBar(b){const el=$('bossbar');el.classList.remove('hidden');
 function hideBossBar(){$('bossbar').classList.add('hidden');}
 
 /* ============ screens ============ */
-const SCREENS=['home','skins','forge','awards','profile','ranks','levels'];
+const SCREENS=['home','skins','forge','awards','profile','ranks','levels','duos'];
 function setState(s){state=s;
   $('hud').style.display=(s==='run'||s==='levelup'||s==='pause')?'block':'none';
   for(const id of SCREENS)$(id).classList.toggle('hidden',s!==id);
   $('levelup').classList.toggle('hidden',s!=='levelup');
   $('pause').classList.toggle('hidden',s!=='pause');
   $('gameover').classList.toggle('hidden',s!=='over');
-  if(s==='pause'){const parts=[];for(const id in ST.weapons)parts.push(WEAPONS[id].name+' '+ST.weapons[id]);
+  if(s==='pause'&&ST){const parts=[];for(const id in ST.weapons)parts.push(WEAPONS[id].name+' '+ST.weapons[id]);
     for(const id in ST.passives)parts.push(PASSIVES[id].name+' '+ST.passives[id]);$('pauseBuild').textContent=parts.join(' · ');}
+  if(s!=='run')player2.visible=false;
   if(s==='home'){clearScene();renderHome();}if(s==='skins')renderSkins();if(s==='forge')renderForge();if(s==='awards')renderAwards();
   if(s==='profile')renderProfile();if(s==='ranks')renderLeaderboard();if(s==='levels')renderLevels();
   syncWallets();
 }
-function syncWallets(){const v=Math.floor(SAVE.coins);['walletHome','walletSkins','walletForge','walletAwards','walletProfile','walletRanks','walletLevels'].forEach(id=>{const el=$(id);if(el)el.textContent=v;});}
+function syncWallets(){const v=Math.floor(SAVE.coins);['walletHome','walletSkins','walletForge','walletAwards','walletProfile','walletRanks','walletLevels','walletDuos'].forEach(id=>{const el=$(id);if(el)el.textContent=v;});}
+/* Duos buttons */
+$('btnDuos').onclick=()=>{netReset();$('duoPick').classList.remove('hidden');$('duoLobby').classList.add('hidden');$('duoJoin').classList.add('hidden');$('duoMsg').textContent='';setState('duos');};
+$('btnHostRoom').onclick=()=>{$('duoMsg').textContent='Connecting…';netConnect(()=>netSend({t:'create'}));};
+$('btnJoinRoom').onclick=()=>{$('duoJoin').classList.toggle('hidden');$('joinCode').focus();};
+$('btnJoinGo').onclick=()=>{const c=($('joinCode').value||'').toUpperCase().trim();if(c.length<4){$('duoMsg').textContent='Enter the 4-letter code.';return;}$('duoMsg').textContent='Connecting…';netConnect(()=>netSend({t:'join',code:c}));};
+$('btnDuoStart').onclick=()=>{if(NET.role==='host'&&NET.peerHere)startCoopHost();};
+$('btnDuoBack').onclick=()=>{netReset();player2.visible=false;setState('home');};
 const BOSS_NAMES=['Warden','Golem','Colossus','Overlord'];
 function renderLevels(){const path=$('levelPath');if(!path)return;const unlocked=SAVE.campaign.unlocked;
   $('levelsNote').textContent='Cleared '+(unlocked-1)+' · next is Level '+unlocked;
@@ -1622,6 +1688,7 @@ function winCampaign(){if(ST.over)return;ST.won=true;
   if(SAVE.campaign.unlocked<ST.clevel+1){SAVE.campaign.unlocked=ST.clevel+1;persist();}
   bannerMsg('LEVEL '+ST.clevel,'COMPLETE');endRun();}
 function endRun(){if(ST.over)return;ST.over=true;
+  if(ST.coop&&ST.isHost){netBroadcast();player2.visible=false;}
   const earned=Math.floor((ST.coins+Math.floor(ST.t/20)+ST.level*2)*ST.greed);SAVE.coins+=earned;
   let best=false;if(ST.t>SAVE.bestTime){SAVE.bestTime=ST.t;best=true;}if(ST.kills>SAVE.bestKills){SAVE.bestKills=ST.kills;best=true;}
   // lifetime stats + daily missions + achievements
@@ -1652,9 +1719,10 @@ function endRun(){if(ST.over)return;ST.over=true;
 /* buttons */
 $('btnCampaign').onclick=()=>setState('levels');
 $('btnFree').onclick=()=>startRun('free');
-$('btnRetry').onclick=()=>{ if(ST&&ST.won&&lastRun.mode==='campaign')startRun('campaign',Math.min(lastRun.clevel+1,SAVE.campaign.unlocked));
+$('btnRetry').onclick=()=>{ if(NET.role==='guest'||NET.active||(ST&&ST.coop)){netReset();player2.visible=false;setState('home');return;}
+  if(ST&&ST.won&&lastRun.mode==='campaign')startRun('campaign',Math.min(lastRun.clevel+1,SAVE.campaign.unlocked));
   else startRun(lastRun.mode,lastRun.clevel); };
-$('btnHome').onclick=()=>setState('home');
+$('btnHome').onclick=()=>{if(NET.active){netReset();player2.visible=false;}setState('home');};
 $('btnSkins').onclick=()=>setState('skins');$('btnForge').onclick=()=>setState('forge');
 $('btnAwards').onclick=()=>setState('awards');
 $('btnDaily').onclick=openDaily;
@@ -1677,10 +1745,113 @@ function idleUpdate(dt){idleT+=dt;
     p.life=p.max=rand(1.4,2.8);p.x=rand(-7,7);p.y=rand(0,1);p.z=rand(-7,7);p.vx=rand(-.4,.4);p.vy=rand(1.6,3.2);p.vz=rand(-.4,.4);p.grav=1.1;p.r=c.r;p.g=c.g;p.b=c.b;}}
   stepParticles(dt);}
 
+/* ============ Duos (co-op) ============ */
+const ENEMY_TYPES=Object.keys(ETYPE);
+const NET={ws:null,role:null,code:null,active:false,peerHere:false,guestInput:{mx:0,mz:0},state:null,acc:0,inAcc:0};
+const GUEST={px:6,pz:0,enemies:new Map(),overShown:false};
+function netUrl(){return (location.protocol==='https:'?'wss://':'ws://')+location.host+'/duo';}
+function netReset(){if(NET.ws){try{NET.ws.onclose=null;NET.ws.close();}catch(e){}}NET.ws=null;NET.role=null;NET.code=null;NET.active=false;NET.peerHere=false;NET.state=null;NET.guestInput={mx:0,mz:0};}
+function netConnect(then){netReset();const ws=new WebSocket(netUrl());NET.ws=ws;
+  ws.onopen=()=>then&&then();
+  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data);}catch(_){return;}netMsg(m);};
+  ws.onclose=()=>{if(NET.active)peerLeft('Connection lost');};
+  ws.onerror=()=>{$('duoMsg').textContent='Connection error — try again.';};}
+function netSend(o){if(NET.ws&&NET.ws.readyState===1){try{NET.ws.send(JSON.stringify(o));}catch(e){}}}
+function netMsg(m){
+  if(m.t==='created'){NET.role='host';NET.code=m.code;showLobby();}
+  else if(m.t==='joined'){NET.role='guest';NET.code=m.code;$('duoMsg').textContent='';showLobby();}
+  else if(m.t==='joinfail'){$('duoMsg').textContent=m.reason||'Could not join.';}
+  else if(m.t==='peer'){if(m.ev==='joined'){NET.peerHere=true;showLobby();}else peerLeft('Partner left the room.');}
+  else if(m.t==='start'){startCoopGuest();}
+  else if(m.t==='state'){NET.state=m;}
+  else if(m.t==='input'){NET.guestInput.mx=m.mx;NET.guestInput.mz=m.mz;}
+}
+function peerLeft(msg){ if(NET.active){toast('Duo ended',msg,'teal'); if(NET.role==='host'&&ST&&!ST.over){ST.coop=false;player2.visible=false;} else if(NET.role==='guest'){ if(state==='run')setState('home'); } NET.active=false; }
+  if(state==='duos'){NET.peerHere=false;showLobby();$('lobbyStatus').textContent=msg;} }
+function showLobby(){$('duoPick').classList.add('hidden');$('duoLobby').classList.remove('hidden');$('roomCode').textContent=NET.code||'----';
+  if(NET.role==='host'){$('btnDuoStart').classList.remove('hidden');$('btnDuoStart').disabled=!NET.peerHere;$('lobbyStatus').textContent=NET.peerHere?'Partner connected — press Start!':'Waiting for a friend to join…';}
+  else{$('btnDuoStart').classList.add('hidden');$('lobbyStatus').textContent='Joined room '+(NET.code||'')+' — waiting for host to start…';}}
+function nearestPlayer(x,z){ if(!ST.coop)return{x:ST.px,z:ST.pz,who:1};
+  const d1=ST.down?1e9:(x-ST.px)**2+(z-ST.pz)**2, d2=ST.p2.down?1e9:(x-ST.p2.px)**2+(z-ST.p2.pz)**2;
+  return d2<d1?{x:ST.p2.px,z:ST.p2.pz,who:2}:{x:ST.px,z:ST.pz,who:1};}
+/* host: start a co-op run */
+function startCoopHost(){NET.active=true;NET.role='host';netSend({t:'start'});
+  clearScene();newRun('free');applyPassives();buildChips();
+  hideBossBar();for(const m of teleMeshes)m.material.opacity=0;clearTelegraphs();
+  boundGlowEl.style.opacity='0';boundWarnEl.style.display='none';
+  ST.coop=true;ST.isHost=true;ST.down=false;
+  ST.p2={px:6,pz:0,hp:ST.maxhp,maxhp:ST.maxhp,down:false,timers:{bolt:0,nova:0}};
+  player2.visible=true;camera.position.set(CAM_OFF.x,CAM_OFF.y,CAM_OFF.z);setState('run');showTip();}
+/* guest: render the host's world, control own player only */
+function startCoopGuest(){NET.active=true;NET.role='guest';GUEST.px=6;GUEST.pz=0;GUEST.overShown=false;
+  clearScene();for(const [id,ge] of GUEST.enemies)ge.g.visible=false;GUEST.enemies.clear();
+  player2.visible=true;player.visible=true;setState('run');showTip();}
+function fireP2(dt){const T=ST.p2.timers,W=ST.weapons,p=ST.p2;if(p.down)return;
+  if(W.bolt){const s=WEAPONS.bolt.stat(W.bolt);T.bolt-=dt;
+    if(T.bolt<=0){let best=null,bd=62*62;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z,d=dx*dx+dz*dz;if(d<bd){_proj.set(e.x,e.y,e.z).project(camera);if(_proj.z<1&&Math.abs(_proj.x)<1.1&&Math.abs(_proj.y)<1.1){bd=d;best=e;}}}
+      if(best){T.bolt=s.cd*ST.cdMul;const base=Math.atan2(best.z-p.pz,best.x-p.px);
+        for(let i=0;i<s.count;i++){const a=base+(i-(s.count-1)/2)*.16;const bm=take(boltMeshes);if(!bm)break;bm.visible=true;bm.position.set(p.px,1.2,p.pz);
+          ST.bolts.push({mesh:bm,x:p.px,z:p.pz,vx:Math.cos(a)*34,vz:Math.sin(a)*34,dmg:s.dmg,pierce:s.pierce,life:1.6});}}}}
+  if(W.nova){const s=WEAPONS.nova.stat(W.nova);T.nova-=dt;
+    if(T.nova<=0){T.nova=s.cd*ST.cdMul;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z;if(dx*dx+dz*dz<(s.radius+e.r)**2)hurtEnemy(e,s.dmg);}}}}
+function netBroadcast(){if(!NET.active||!ST||!ST.isHost)return;
+  const en=[];for(const e of ST.enemies){if(e.dead)continue;en.push([e.id,ENEMY_TYPES.indexOf(e.type),Math.round(e.x*10)/10,Math.round(e.z*10)/10,Math.max(0,Math.min(255,Math.round(255*e.hp/e.maxhp)))]);if(en.length>=60)break;}
+  const orbs=[];for(const o of ST.orbs){orbs.push([Math.round(o.x),Math.round(o.z)]);if(orbs.length>=40)break;}
+  const tg=ST.telegraphs.map(t=>[Math.round(t.x),Math.round(t.z),Math.round(t.r*10)/10,t.linger?1:0]);
+  netSend({t:'state',p1:[Math.round(ST.px*10)/10,Math.round(ST.pz*10)/10,Math.round(ST.hp),ST.maxhp,ST.down?1:0],
+    p2:[Math.round(ST.p2.px*10)/10,Math.round(ST.p2.pz*10)/10,Math.round(ST.p2.hp),ST.p2.maxhp,ST.p2.down?1:0],
+    en,orbs,tg,w:ST.wave,l:ST.wlevel,b:ST.isBossWave?1:0,
+    bf:ST.bossE&&!ST.bossE.dead?Math.round(255*ST.bossE.hp/ST.bossE.maxhp):-1,bn:ST.bossE&&!ST.bossE.dead?ENEMY_TYPES.indexOf(ST.bossE.type):-1,
+    over:ST.over?1:0});}
+/* guest per-frame */
+const _gmid=new THREE.Vector3();
+function guestFrame(dt){const st=NET.state;
+  // own input → predict + send
+  let mx=(keys['d']||keys['arrowright']?1:0)-(keys['a']||keys['arrowleft']?1:0);
+  let mz=(keys['s']||keys['arrowdown']?1:0)-(keys['w']||keys['arrowup']?1:0);
+  if(joyOn){mx=jvx;mz=jvy;}const ml=Math.hypot(mx,mz);if(ml>1){mx/=ml;mz/=ml;}
+  GUEST.px=clamp(GUEST.px+mx*17*dt,-ARENA*1.35,ARENA*1.35);GUEST.pz=clamp(GUEST.pz+mz*17*dt,-ARENA*1.35,ARENA*1.35);
+  NET.inAcc+=dt;if(NET.inAcc>=0.05){NET.inAcc=0;netSend({t:'input',mx:+mx.toFixed(2),mz:+mz.toFixed(2)});}
+  if(st){
+    player.position.set(st.p1[0],1.4+Math.sin(idleT*3)*.1,st.p1[1]);player.visible=st.p1[4]?false:true;
+    GUEST.px+=(st.p2[0]-GUEST.px)*Math.min(1,4*dt);GUEST.pz+=(st.p2[1]-GUEST.pz)*Math.min(1,4*dt);
+    player2.position.set(GUEST.px,1.4+Math.sin(idleT*3+1)*.1,GUEST.pz);player2.visible=st.p2[4]?false:true;
+    p2core.rotation.y+=dt;p2light.position.set(GUEST.px,2.6,GUEST.pz);
+    pcore.rotation.y+=dt;emberLight.position.set(st.p1[0],2.6,st.p1[1]);
+    guestSyncEnemies(st.en,dt);guestSyncOrbs(st.orbs||[]);guestSyncTele(st.tg||[]);guestHud(st);
+    _gmid.set((st.p1[0]+GUEST.px)/2,0,(st.p1[1]+GUEST.pz)/2).add(CAM_OFF);
+    camera.position.lerp(_gmid,Math.min(1,6*dt));camera.lookAt((st.p1[0]+GUEST.px)/2,1,(st.p1[1]+GUEST.pz)/2);
+    if(st.over&&!GUEST.overShown){GUEST.overShown=true;
+      $('goEyebrow').textContent='Duo run';$('goTitle').innerHTML='The swarm <span class="e">wins this time</span>';
+      $('goStats').innerHTML='<div class="c"><div class="k">Wave</div><div class="v num">'+st.w+'</div></div><div class="c"><div class="k">Level</div><div class="v num">'+st.l+'</div></div>';
+      $('goBest').classList.add('hidden');$('btnRetry').textContent='Back to Lobby';setState('over');}
+  }
+  idleT+=dt;stepParticles(dt);}
+function guestSyncEnemies(en,dt){const seen=new Set();
+  for(const a of en){const id=a[0],type=ENEMY_TYPES[a[1]];seen.add(id);let ge=GUEST.enemies.get(id);
+    if(!ge){const g=take(enemyPool[type]);if(!g)continue;if(g.userData.hpbar)g.userData.hpbar.visible=true;ge={g,type,x:a[2],z:a[3],tx:a[2],tz:a[3],lx:a[2],lz:a[3]};GUEST.enemies.set(id,ge);}
+    ge.tx=a[2];ge.tz=a[3];ge.hpf=a[4]/255;}
+  for(const [id,ge] of GUEST.enemies){if(!seen.has(id)){ge.g.visible=false;if(ge.g.userData.hpbar)ge.g.userData.hpbar.visible=false;GUEST.enemies.delete(id);}}
+  for(const [id,ge] of GUEST.enemies){ge.x+=(ge.tx-ge.x)*Math.min(1,12*dt);ge.z+=(ge.tz-ge.z)*Math.min(1,12*dt);
+    const g=ge.g,ud=g.userData,mdx=ge.tx-ge.lx,mdz=ge.tz-ge.lz;
+    if(Math.abs(mdx)+Math.abs(mdz)>0.008)g.rotation.set(0,Math.atan2(mdx,mdz)+((MODELINFO[ge.type]&&MODELINFO[ge.type].faceOff)||0),0);
+    g.position.set(ge.x,0,ge.z);if(ud.mixer)ud.mixer.update(dt*0.9);ge.lx=ge.x;ge.lz=ge.z;
+    const hb=ud.hpbar;if(hb){const mi=MODELINFO[ge.type];hb.position.set(ge.x,mi?mi.headY:2.5,ge.z);hb.quaternion.copy(camera.quaternion);
+      const fill=hb.userData.fill,w=hb.userData.w,frac=ge.hpf==null?1:ge.hpf;fill.scale.x=Math.max(.0001,w*frac);fill.position.x=-(w*(1-frac))/2;}}}
+function guestSyncOrbs(orbs){for(let i=0;i<orbMeshes.length;i++){if(i<orbs.length){orbMeshes[i].visible=true;orbMeshes[i].position.set(orbs[i][0],.8,orbs[i][1]);orbMeshes[i].rotation.y+=.05;}else orbMeshes[i].visible=false;}}
+function guestSyncTele(tg){for(let i=0;i<teleMeshes.length;i++){if(i<tg.length){const t=tg[i];teleMeshes[i].position.set(t[0],.07,t[1]);teleMeshes[i].scale.set(t[2],t[2],t[2]);teleMeshes[i].material.color.setHex(t[3]?0x7CFF3D:0xFF4F66);teleMeshes[i].material.opacity=.5;}else teleMeshes[i].material.opacity=0;}}
+function guestHud(st){const mh=st.p2[3]||100,hp=st.p2[2];
+  $('hpbar').firstElementChild.style.width=(100*clamp(hp/mh,0,1))+'%';$('hptext').textContent=Math.max(0,Math.ceil(hp))+' / '+mh;
+  $('xpbar').firstElementChild.style.width='0%';$('lvlbadge').textContent='2';
+  $('waveInfo').textContent='LV '+st.l+' · WAVE '+st.w+(st.b?' · BOSS':'')+' · CO-OP';
+  $('val-kills').textContent='CO-OP';$('val-ember').textContent=st.p1[4]?'P1 DOWN':'';
+  if(st.bf>=0){$('bossbar').classList.remove('hidden');const bt=ENEMY_TYPES[st.bn];$('bossName').textContent=(ETYPE[bt]?ETYPE[bt].name:'BOSS').toUpperCase();$('bossTier').textContent='★'.repeat(TIER[bt]||3);$('bossbar').querySelector('.bb-bar>span').style.width=(100*st.bf/255)+'%';}else $('bossbar').classList.add('hidden');}
+
 /* ============ main loop ============ */
 let last=performance.now();
 function loop(now){requestAnimationFrame(loop);let dt=(now-last)/1000;last=now;if(dt>.05)dt=.05;
-  if(state==='run'&&ST&&!ST.over)update(dt);
+  if(state==='run'&&NET.active&&NET.role==='guest')guestFrame(dt);
+  else if(state==='run'&&ST&&!ST.over)update(dt);
   else if(state==='home')idleUpdate(dt);
   renderer.render(scene,camera);}
 requestAnimationFrame(loop);

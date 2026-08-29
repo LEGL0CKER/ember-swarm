@@ -92,7 +92,7 @@ function handleApi(req, res, urlPath) {
   return sendJSON(res, 404, { error: 'not_found' });
 }
 
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
   const urlPath = decodeURIComponent(req.url.split('?')[0]);
   if (urlPath.startsWith('/api/')) return handleApi(req, res, urlPath);
 
@@ -111,4 +111,51 @@ http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': TYPES[ext] || 'application/octet-stream' });
     res.end(data);
   });
-}).listen(PORT, () => console.log('Ember Swarm listening on port ' + PORT));
+});
+
+/* ---------- Duos: WebSocket relay (host-authoritative rooms) ---------- */
+try {
+  const { WebSocketServer } = require('ws');
+  const wss = new WebSocketServer({ server, path: '/duo' });
+  const rooms = new Map(); // CODE -> { host, guest }
+  const code4 = () => { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c = ''; for (let i = 0; i < 4; i++) c += A[(Math.random() * A.length) | 0]; return c; };
+  const send = (ws, obj) => { if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(obj)); } catch (e) {} } };
+  wss.on('connection', ws => {
+    ws.room = null; ws.role = null; ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
+    ws.on('message', raw => {
+      let m; try { m = JSON.parse(raw); } catch (e) { return; }
+      if (m.t === 'create') {
+        if (ws.room) return;
+        let c; let guard = 0; do { c = code4(); } while (rooms.has(c) && ++guard < 50);
+        rooms.set(c, { host: ws, guest: null }); ws.room = c; ws.role = 'host';
+        send(ws, { t: 'created', code: c });
+      } else if (m.t === 'join') {
+        const code = String(m.code || '').toUpperCase(); const r = rooms.get(code);
+        if (!r) return send(ws, { t: 'joinfail', reason: 'No room with that code' });
+        if (r.guest || r.host === ws) return send(ws, { t: 'joinfail', reason: 'Room is full' });
+        r.guest = ws; ws.room = code; ws.role = 'guest';
+        send(ws, { t: 'joined', code });
+        send(r.host, { t: 'peer', ev: 'joined' });
+      } else {
+        // relay everything else verbatim to the other peer
+        const r = rooms.get(ws.room); if (!r) return;
+        const peer = ws.role === 'host' ? r.guest : r.host;
+        if (peer && peer.readyState === 1) peer.send(raw.toString());
+      }
+    });
+    ws.on('close', () => {
+      const r = rooms.get(ws.room); if (!r) return;
+      const peer = ws.role === 'host' ? r.guest : r.host;
+      send(peer, { t: 'peer', ev: 'left' });
+      // host leaving closes the room; guest leaving frees the slot
+      if (ws.role === 'host') rooms.delete(ws.room);
+      else r.guest = null;
+    });
+  });
+  // keepalive: drop dead sockets
+  setInterval(() => { wss.clients.forEach(ws => { if (!ws.isAlive) return ws.terminate(); ws.isAlive = false; try { ws.ping(); } catch (e) {} }); }, 30000);
+  console.log('Duo relay ready on /duo');
+} catch (e) { console.error('ws relay unavailable:', e.message); }
+
+server.listen(PORT, () => console.log('Ember Swarm listening on port ' + PORT));
