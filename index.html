@@ -323,6 +323,11 @@
   .pcard .pname{font-family:var(--cond);font-weight:700;font-size:22px;letter-spacing:.02em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pcard .pedit{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:2px}
   .pcard .pgo{color:var(--amber);font-size:18px;flex:0 0 auto}
+  .acctbar{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;margin:0 0 6px;pointer-events:auto;cursor:pointer;
+    background:linear-gradient(180deg,#171a2b,#12141f);border:1px solid var(--line);border-radius:var(--r);padding:11px 15px;text-align:left;
+    font-family:var(--mono);font-size:13px;color:var(--muted)}
+  .acctbar:hover{border-color:var(--teal);color:#cfe}
+  .acctbar .pgo{color:var(--teal);font-size:18px}
   .pbig{width:180px;height:180px;margin:8px auto 0;border-radius:26px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.5),0 0 0 1px var(--line)}
   .pbig svg{width:100%;height:100%;display:block}
   .nameinput{display:block;width:100%;max-width:300px;margin:16px auto 0;background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r-sm);
@@ -398,6 +403,7 @@
       <div class="pinfo"><div class="pname" id="homeName">Player</div><div class="pedit">Tap to customize your icon ›</div></div>
       <div class="pgo">✎</div>
     </button>
+    <button class="acctbar" id="btnAccount"><span id="acctBarText">Sign in / Create account</span><span class="pgo">›</span></button>
     <div class="hero">
       <h1>Ember<span class="e">Swarm</span></h1>
       <div class="best">
@@ -489,6 +495,32 @@
     <div class="shead"><h2>Top Survivors</h2><span class="h" id="ranksNote">You + rivals</span></div>
     <div id="rankList" class="ranklist"></div>
     <div style="height:12px"></div>
+  </div></div>
+  <div class="backbar"><button class="backbtn" data-back>← Home</button></div>
+</div>
+
+<!-- ACCOUNT -->
+<div id="account" class="screen hidden">
+  <div class="appbar">
+    <div class="brand"><div class="mk"></div><div class="nm">Account</div></div>
+    <div class="wallet"><div class="dot"></div><div class="amt num" id="walletAccount">0</div></div>
+  </div>
+  <div class="body"><div class="wrap" style="max-width:420px">
+    <div id="acctSignedOut">
+      <div class="shead"><h2 id="acctTitle">Sign in</h2><span class="h">Save your scores across devices</span></div>
+      <input id="acctUser" class="nameinput" style="width:100%" maxlength="16" autocomplete="username" placeholder="Username (3-16)" />
+      <input id="acctPass" type="password" class="nameinput" style="width:100%;margin-top:10px" maxlength="200" autocomplete="current-password" placeholder="Password (8+ characters)" />
+      <div id="acctMsg" style="min-height:20px;margin:8px 2px;color:var(--rose,#FF6B7F);font-size:13px"></div>
+      <button class="cta" id="btnAcctSubmit" style="margin-top:2px">Sign In</button>
+      <button class="cta cta2" id="btnAcctToggle" style="margin-top:10px">Create an account instead</button>
+      <p style="opacity:.55;font-size:12px;line-height:1.5;margin-top:16px">Your password is hashed on the server (scrypt) and never stored in plain text. It’s only used to sign you in.</p>
+    </div>
+    <div id="acctSignedIn" class="hidden">
+      <div class="shead"><h2>Signed in</h2></div>
+      <div style="font-size:22px;font-weight:800;margin:8px 2px" id="acctWho">—</div>
+      <p style="opacity:.6;font-size:13px;margin-bottom:16px">Your best runs are saved to this account and shown on the leaderboard.</p>
+      <button class="cta cta2" id="btnAcctLogout">Sign Out</button>
+    </div>
   </div></div>
   <div class="backbar"><button class="backbtn" data-back>← Home</button></div>
 </div>
@@ -1654,7 +1686,7 @@ function showBossBar(b){const el=$('bossbar');el.classList.remove('hidden');
 function hideBossBar(){$('bossbar').classList.add('hidden');}
 
 /* ============ screens ============ */
-const SCREENS=['home','skins','forge','awards','profile','ranks','levels','duos'];
+const SCREENS=['home','skins','forge','awards','profile','ranks','levels','duos','account'];
 function setState(s){state=s;
   $('hud').style.display=(s==='run'||s==='levelup'||s==='pause')?'block':'none';
   for(const id of SCREENS)$(id).classList.toggle('hidden',s!==id);
@@ -1665,10 +1697,10 @@ function setState(s){state=s;
     for(const id in ST.passives)parts.push(PASSIVES[id].name+' '+ST.passives[id]);$('pauseBuild').textContent=parts.join(' · ');}
   if(s!=='run'){player2.visible=false;pmark.visible=false;p2mark.visible=false;}
   if(s==='home'){clearScene();renderHome();}if(s==='skins')renderSkins();if(s==='forge')renderForge();if(s==='awards')renderAwards();
-  if(s==='profile')renderProfile();if(s==='ranks')renderLeaderboard();if(s==='levels')renderLevels();
+  if(s==='profile')renderProfile();if(s==='ranks')renderLeaderboard();if(s==='levels')renderLevels();if(s==='account')renderAccount();
   syncWallets();
 }
-function syncWallets(){const v=Math.floor(SAVE.coins);['walletHome','walletSkins','walletForge','walletAwards','walletProfile','walletRanks','walletLevels','walletDuos'].forEach(id=>{const el=$(id);if(el)el.textContent=v;});}
+function syncWallets(){const v=Math.floor(SAVE.coins);['walletHome','walletSkins','walletForge','walletAwards','walletProfile','walletRanks','walletLevels','walletDuos','walletAccount'].forEach(id=>{const el=$(id);if(el)el.textContent=v;});}
 /* Duos buttons */
 $('btnDuos').onclick=()=>{netReset();$('duoPick').classList.remove('hidden');$('duoLobby').classList.add('hidden');$('duoJoin').classList.add('hidden');$('duoMsg').textContent='';setState('duos');};
 $('btnHostRoom').onclick=()=>{$('duoMsg').textContent='Connecting…';netConnect(()=>netSend({t:'create'}));};
@@ -1696,6 +1728,7 @@ function renderHome(){ensureMissions();
   $('homeAv').innerHTML=avatarSVG(SAVE.profile.av,58);
   $('brandAv').innerHTML=avatarSVG(SAVE.profile.av,30);
   $('homeName').textContent=SAVE.profile.name;
+  acctBarText();
   renderMissionsCard();
 }
 /* ---- profile editor ---- */
@@ -1720,11 +1753,48 @@ function ensureRivals(){if(SAVE.rivals&&SAVE.rivals.length)return;
   SAVE.rivals.forEach(r=>r.score=scoreOf(r.t,r.k,r.l));persist();}
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function safeAv(a){a=a||{};const n={};for(const c of AV_CATS){n[c.k]=(Math.abs(parseInt(a[c.k],10))||0)%c.arr.length;}return n;}
-function submitScore(run){try{fetch('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({token:SAVE.token,name:SAVE.profile.name,avatar:SAVE.profile.av,score:run.score,time:run.t,kills:run.k,level:run.l})}).catch(()=>{});}catch(e){}}
+function submitScore(run){try{const p={token:SAVE.token,name:SAVE.profile.name,avatar:SAVE.profile.av,score:run.score,time:run.t,kills:run.k,level:run.l};
+  if(SAVE.account&&SAVE.account.token)p.sessionToken=SAVE.account.token;
+  fetch('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}).catch(()=>{});}catch(e){}}
+/* ---- accounts ---- */
+let acctMode='login';
+function accountName(){return SAVE.account&&SAVE.account.username?SAVE.account.username:null;}
+function renderAccount(){const on=!!accountName();
+  $('acctSignedOut').classList.toggle('hidden',on);$('acctSignedIn').classList.toggle('hidden',!on);
+  if(on){$('acctWho').textContent=SAVE.account.username;}
+  else{acctMode='login';applyAcctMode();$('acctMsg').textContent='';$('acctPass').value='';}}
+function applyAcctMode(){const reg=acctMode==='register';
+  $('acctTitle').textContent=reg?'Create account':'Sign in';
+  $('btnAcctSubmit').textContent=reg?'Create Account':'Sign In';
+  $('btnAcctToggle').textContent=reg?'I already have an account':'Create an account instead';
+  $('acctPass').setAttribute('autocomplete',reg?'new-password':'current-password');}
+function acctBarText(){const n=accountName();$('acctBarText').textContent=n?('Signed in as '+n):'Sign in / Create account';}
+async function doAuth(){const u=($('acctUser').value||'').trim(),p=$('acctPass').value||'';
+  const msg=$('acctMsg');msg.style.color='var(--rose,#FF6B7F)';
+  if(!/^[A-Za-z0-9_]{3,16}$/.test(u)){msg.textContent='Username: 3-16 letters, numbers or _';return;}
+  if(p.length<8){msg.textContent='Password must be at least 8 characters.';return;}
+  $('btnAcctSubmit').disabled=true;msg.style.color='var(--muted)';msg.textContent='…';
+  try{const r=await fetch('/api/'+(acctMode==='register'?'register':'login'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok&&j.token){SAVE.account={token:j.token,username:j.username};persist();
+      $('acctPass').value='';sfx&&sfx.buy&&sfx.buy();acctBarText();renderAccount();
+      toast('Signed in','Welcome, '+j.username,'teal');}
+    else{msg.style.color='var(--rose,#FF6B7F)';msg.textContent=j.message||'Something went wrong. Try again.';}
+  }catch(e){msg.style.color='var(--rose,#FF6B7F)';msg.textContent='Network error. Try again.';}
+  $('btnAcctSubmit').disabled=false;}
+async function doLogout(){const t=SAVE.account&&SAVE.account.token;SAVE.account=null;persist();acctBarText();renderAccount();
+  try{if(t)await fetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:t})});}catch(e){}
+  toast('Signed out','','teal');}
+// on boot: if we have a stored session, confirm it's still valid (else clear it)
+async function verifyAccount(){if(!(SAVE.account&&SAVE.account.token)){acctBarText();return;}
+  try{const r=await fetch('/api/me',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:SAVE.account.token})});
+    const j=await r.json().catch(()=>({}));
+    if(!(j&&j.user)){SAVE.account=null;persist();}else{SAVE.account.username=j.user.username;persist();}
+  }catch(e){}
+  acctBarText();}
 function renderBoard(board,global,myBest){
   board.sort((a,b)=>b.score-a.score);
-  let meIdx=-1;const pn=SAVE.profile.name;
+  let meIdx=-1;const pn=accountName()||SAVE.profile.name;
   if(myBest)meIdx=board.findIndex(r=>r.name===pn&&r.score===myBest.score);
   if(meIdx<0)meIdx=board.findIndex(r=>r.name===pn);
   const list=$('rankList');list.innerHTML='';
@@ -1888,6 +1958,11 @@ $('btnAwards').onclick=()=>setState('awards');
 $('btnDaily').onclick=openDaily;
 $('btnProfile').onclick=()=>{editAv=null;setState('profile');};
 $('btnRanks').onclick=()=>setState('ranks');
+$('btnAccount').onclick=()=>setState('account');
+$('btnAcctToggle').onclick=()=>{acctMode=acctMode==='register'?'login':'register';applyAcctMode();$('acctMsg').textContent='';};
+$('btnAcctSubmit').onclick=()=>doAuth();
+$('btnAcctLogout').onclick=()=>doLogout();
+$('acctPass').addEventListener('keydown',e=>{if(e.key==='Enter')doAuth();});
 $('btnReroll').onclick=()=>{editAv=randAvatar();sfx.buy();renderProfile();};
 $('btnProfileSave').onclick=()=>{const nm=($('nameInput').value||'').trim().slice(0,16)||'Player';
   SAVE.profile={name:nm,av:editAv||SAVE.profile.av};editAv=null;persist();sfx.buy();setState('home');};
@@ -2056,6 +2131,7 @@ camera.position.set(0,30,40);camera.lookAt(0,1,0);
 ensureMissions();
 const _ll=$('loading').querySelector('.l');if(_ll)_ll.textContent='SUMMONING MONSTERS…';
 function finishBoot(){initEnemyPools();checkAchievements();$('loading').classList.add('hidden');setState('home');
+  verifyAccount();
   if(dailyAvailable()&&SAVE.bestTime>0)setTimeout(openDaily,500);}
 loadModels().then(finishBoot).catch(e=>{console.error('boot load error',e);finishBoot();});
 

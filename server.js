@@ -2,6 +2,9 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const { promisify } = require('util');
+const scrypt = promisify(crypto.scrypt);
 
 const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
@@ -37,10 +40,27 @@ if (DB_URL) {
         score INT, time INT, kills INT, level INT,
         updated_at TIMESTAMPTZ DEFAULT now()
       )`
-    ).then(() => {
+    ).then(() => pool.query(
+      `CREATE TABLE IF NOT EXISTS users(
+        id SERIAL PRIMARY KEY,
+        username TEXT NOT NULL,
+        username_lower TEXT UNIQUE NOT NULL,
+        pass_hash TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT now()
+      )`
+    )).then(() => pool.query(
+      `CREATE TABLE IF NOT EXISTS sessions(
+        token_hash TEXT PRIMARY KEY,
+        user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        expires_at TIMESTAMPTZ NOT NULL
+      )`
+    )).then(() => {
       console.log('DB ready');
       // one-off cleanup of setup test rows (fake tokens; never returned by real clients)
       pool.query("DELETE FROM scores WHERE token IN ('testtoken1','tok2')").catch(() => {});
+      // sweep expired sessions periodically
+      pool.query('DELETE FROM sessions WHERE expires_at < now()').catch(() => {});
     }).catch(e => console.error('DB init error', e.message));
   } catch (e) { console.error('pg load error', e.message); }
 }
@@ -50,6 +70,81 @@ function sendJSON(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 const clampInt = (v, lo, hi) => { v = Math.floor(Number(v) || 0); return Math.max(lo, Math.min(hi, v)); };
+
+/* ---------- accounts: password hashing + sessions ---------- */
+const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
+// store as scrypt$<saltHex>$<hashHex>
+async function hashPassword(pw) {
+  const salt = crypto.randomBytes(16);
+  const dk = await scrypt(pw, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p });
+  return 'scrypt$' + salt.toString('hex') + '$' + dk.toString('hex');
+}
+async function verifyPassword(pw, stored) {
+  const parts = String(stored || '').split('$');
+  if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
+  const salt = Buffer.from(parts[1], 'hex');
+  const want = Buffer.from(parts[2], 'hex');
+  let dk;
+  try { dk = await scrypt(pw, salt, want.length || SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p }); }
+  catch (e) { return false; }
+  return dk.length === want.length && crypto.timingSafeEqual(dk, want);
+}
+const newSessionToken = () => crypto.randomBytes(32).toString('hex');
+const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
+const SESSION_DAYS = 30;
+
+// create a session row for a user, return the raw token (only the hash is stored)
+async function createSession(userId) {
+  const token = newSessionToken();
+  await pool.query(
+    'INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2, now() + ($3 || \' days\')::interval)',
+    [sha256(token), userId, String(SESSION_DAYS)]
+  );
+  return token;
+}
+// resolve a raw bearer token to { id, username } or null
+async function userForToken(token) {
+  if (!token || typeof token !== 'string' || token.length < 32) return null;
+  const r = await pool.query(
+    `SELECT u.id, u.username FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token_hash = $1 AND s.expires_at > now()`,
+    [sha256(token)]
+  );
+  return r.rows[0] || null;
+}
+const validUsername = (u) => typeof u === 'string' && /^[A-Za-z0-9_]{3,16}$/.test(u);
+const validPassword = (p) => typeof p === 'string' && p.length >= 8 && p.length <= 200;
+
+/* ---------- simple in-memory rate limiter (per IP, per bucket) ---------- */
+const rlBuckets = new Map(); // key -> [timestamps]
+function rateLimited(key, max, windowMs) {
+  const now = Date.now();
+  let arr = rlBuckets.get(key);
+  if (!arr) { arr = []; rlBuckets.set(key, arr); }
+  while (arr.length && now - arr[0] > windowMs) arr.shift();
+  if (arr.length >= max) return true;
+  arr.push(now);
+  return false;
+}
+setInterval(() => { // stop the map from growing unbounded
+  const now = Date.now();
+  for (const [k, arr] of rlBuckets) { while (arr.length && now - arr[0] > 3600000) arr.shift(); if (!arr.length) rlBuckets.delete(k); }
+}, 600000).unref();
+function clientIp(req) {
+  const xf = req.headers['x-forwarded-for'];
+  if (xf) return String(xf).split(',')[0].trim();
+  return (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+// read a small JSON body (auth payloads are tiny); calls cb(err, obj)
+function readJson(req, res, limit, cb) {
+  let body = '', tooBig = false;
+  req.on('data', c => { body += c; if (body.length > limit) { tooBig = true; req.destroy(); } });
+  req.on('end', () => {
+    if (tooBig) return cb('too_large');
+    try { cb(null, JSON.parse(body || '{}')); } catch (e) { cb('bad_json'); }
+  });
+  req.on('error', () => cb('req_error'));
+}
 
 function handleApi(req, res, urlPath) {
   if (!pool) return sendJSON(res, 503, { error: 'db_unavailable' });
@@ -62,19 +157,25 @@ function handleApi(req, res, urlPath) {
   }
 
   if (req.method === 'POST' && urlPath === '/api/score') {
-    let body = '', tooBig = false;
-    req.on('data', c => { body += c; if (body.length > 4000) { tooBig = true; req.destroy(); } });
-    req.on('end', () => {
-      if (tooBig) return sendJSON(res, 413, { error: 'too_large' });
-      let d; try { d = JSON.parse(body); } catch (e) { return sendJSON(res, 400, { error: 'bad_json' }); }
-      const token = String(d.token || '').slice(0, 64);
-      if (!token) return sendJSON(res, 400, { error: 'no_token' });
-      const name = String(d.name || 'Player').slice(0, 16);
+    readJson(req, res, 4000, async (err, d) => {
+      if (err) return sendJSON(res, err === 'too_large' ? 413 : 400, { error: err });
       const score = clampInt(d.score, 0, 10000000);
       const time = clampInt(d.time, 0, 86400);
       const kills = clampInt(d.kills, 0, 1000000);
       const level = clampInt(d.level, 0, 10000);
       let avatar = '{}'; try { avatar = JSON.stringify(d.avatar || {}); } catch (e) {}
+      // a logged-in session ties the score to the account (name comes from the account, can't be spoofed)
+      let key, name;
+      try {
+        const acct = d.sessionToken ? await userForToken(String(d.sessionToken)) : null;
+        if (acct) { key = 'u' + acct.id; name = acct.username; }
+      } catch (e) {}
+      if (!key) {
+        const token = String(d.token || '').slice(0, 64);
+        if (!token) return sendJSON(res, 400, { error: 'no_token' });
+        key = 'd' + token; // namespace device tokens so they can't collide with account keys
+        name = String(d.name || 'Player').slice(0, 16);
+      }
       pool.query(
         `INSERT INTO scores(token,name,avatar,score,time,kills,level,updated_at)
          VALUES($1,$2,$3,$4,$5,$6,$7,now())
@@ -82,13 +183,69 @@ function handleApi(req, res, urlPath) {
            name=EXCLUDED.name, avatar=EXCLUDED.avatar, score=EXCLUDED.score,
            time=EXCLUDED.time, kills=EXCLUDED.kills, level=EXCLUDED.level, updated_at=now()
          WHERE EXCLUDED.score > scores.score`,
-        [token, name, avatar, score, time, kills, level]
+        [key, name, avatar, score, time, kills, level]
       ).then(() => sendJSON(res, 200, { ok: true }))
        .catch(() => sendJSON(res, 500, { error: 'insert_failed' }));
     });
-    req.on('error', () => { try { sendJSON(res, 400, { error: 'req_error' }); } catch (_) {} });
     return;
   }
+
+  // ---- accounts ----
+  if (req.method === 'POST' && (urlPath === '/api/register' || urlPath === '/api/login')) {
+    const ip = clientIp(req);
+    // brute-force protection: cap auth attempts per IP
+    if (rateLimited('auth:' + ip, 12, 5 * 60 * 1000)) return sendJSON(res, 429, { error: 'too_many_attempts' });
+    readJson(req, res, 1000, async (err, d) => {
+      if (err) return sendJSON(res, err === 'too_large' ? 413 : 400, { error: err });
+      const username = typeof d.username === 'string' ? d.username.trim() : '';
+      const password = typeof d.password === 'string' ? d.password : '';
+      if (!validUsername(username)) return sendJSON(res, 400, { error: 'bad_username', message: '3-16 letters, numbers or underscore.' });
+      if (!validPassword(password)) return sendJSON(res, 400, { error: 'bad_password', message: 'Password must be at least 8 characters.' });
+      const lower = username.toLowerCase();
+      try {
+        if (urlPath === '/api/register') {
+          const ph = await hashPassword(password);
+          const r = await pool.query(
+            'INSERT INTO users(username,username_lower,pass_hash) VALUES($1,$2,$3) ON CONFLICT(username_lower) DO NOTHING RETURNING id',
+            [username, lower, ph]
+          );
+          if (!r.rows[0]) return sendJSON(res, 409, { error: 'username_taken', message: 'That name is taken.' });
+          const token = await createSession(r.rows[0].id);
+          return sendJSON(res, 200, { ok: true, token, username });
+        } else { // login
+          const r = await pool.query('SELECT id, username, pass_hash FROM users WHERE username_lower=$1', [lower]);
+          const row = r.rows[0];
+          const ok = row ? await verifyPassword(password, row.pass_hash) : false;
+          if (!ok) return sendJSON(res, 401, { error: 'invalid_credentials', message: 'Wrong name or password.' });
+          const token = await createSession(row.id);
+          return sendJSON(res, 200, { ok: true, token, username: row.username });
+        }
+      } catch (e) { return sendJSON(res, 500, { error: 'server_error' }); }
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && urlPath === '/api/logout') {
+    readJson(req, res, 1000, (err, d) => {
+      if (err) return sendJSON(res, 400, { error: err });
+      const t = String((d && d.token) || '');
+      if (t.length >= 32) pool.query('DELETE FROM sessions WHERE token_hash=$1', [sha256(t)]).catch(() => {});
+      sendJSON(res, 200, { ok: true });
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && urlPath === '/api/me') {
+    readJson(req, res, 1000, async (err, d) => {
+      if (err) return sendJSON(res, 400, { error: err });
+      try {
+        const acct = await userForToken(String((d && d.token) || ''));
+        return sendJSON(res, 200, { user: acct ? { username: acct.username } : null });
+      } catch (e) { return sendJSON(res, 500, { error: 'server_error' }); }
+    });
+    return;
+  }
+
   return sendJSON(res, 404, { error: 'not_found' });
 }
 
