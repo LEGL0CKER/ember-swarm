@@ -548,8 +548,23 @@
 <!-- LEVEL UP -->
 <div id="levelup" class="overlay hidden">
   <div class="modal">
-    <div class="center"><div class="eyebrow">Level <span id="luLevel">2</span> reached</div><h2 style="margin-top:4px">Choose an <span class="e">upgrade</span></h2></div>
+    <div class="center"><div class="eyebrow" id="luEyebrow">Level <span id="luLevel">2</span> reached</div><h2 style="margin-top:4px">Choose an <span class="e">upgrade</span></h2></div>
     <div id="luCards"></div>
+  </div>
+</div>
+
+<!-- STARTING ABILITY PICKER -->
+<div id="startpick" class="overlay hidden">
+  <div class="modal">
+    <div class="center"><div class="eyebrow">Before you begin</div><h2 style="margin-top:4px">Choose your <span class="e">starting ability</span></h2></div>
+    <div id="spCards"></div>
+  </div>
+</div>
+
+<!-- CO-OP: partner is choosing -->
+<div id="coopwait" class="overlay hidden">
+  <div class="modal center">
+    <h2>Partner is <span class="e">leveling up</span></h2><div class="sub">Hang tight — they’re choosing an upgrade…</div>
   </div>
 </div>
 
@@ -1074,7 +1089,21 @@ const WEAPONS={
     stat:l=>({count:[1,2,3,4][l-1],dmg:[10,10,15,20][l-1],radius:[4,4,5,5.5][l-1]})},
   nova:{name:'Ash Nova',max:5,blurb:['Periodic burst scorches nearby foes','Bigger burst','Far harder','Faster & wider','A firestorm'],
     stat:l=>({cd:[4,3.6,3.6,2.8,2.2][l-1],dmg:[16,16,26,26,38][l-1],radius:[7,9,9,11,13][l-1]})},
+  scatter:{name:'Ember Scatter',max:5,blurb:['Blast a ring of sparks outward','A denser ring','Sparks bite harder','Even denser','A supernova of sparks'],
+    stat:l=>({count:[6,8,10,12,16][l-1],dmg:[9,9,13,13,18][l-1],cd:[2.6,2.4,2.2,2.0,1.8][l-1]})},
+  lash:{name:'Cinder Lash',max:5,blurb:['Sweep a fiery arc in front of you','A wider arc','Sears far harder','Wider & faster','A whirl of flame'],
+    stat:l=>({arc:[1.1,1.4,1.4,1.8,2.4][l-1],range:[7,7,8,8.5,9][l-1],dmg:[16,16,24,24,34][l-1],cd:[1.4,1.2,1.1,1.0,.85][l-1]})},
 };
+// shared weapon effects so BOTH players (host + partner) can wield them
+function doScatter(px,pz,s,mul){for(let i=0;i<s.count;i++){const a=i/s.count*TAU;const bm=take(boltMeshes);if(!bm)break;
+    bm.visible=true;bm.position.set(px,1.2,pz);ST.bolts.push({mesh:bm,x:px,z:pz,vx:Math.cos(a)*26,vz:Math.sin(a)*26,dmg:s.dmg,pierce:1,life:.95,mul});}
+  sfx.shot();}
+function doLash(px,pz,s,mul,dirx,dirz){const base=Math.atan2(dirz,dirx);let hit=false;
+  for(const e of ST.enemies){if(e.dead)continue;const dx=e.x-px,dz=e.z-pz,d=Math.hypot(dx,dz);if(d>s.range+e.r)continue;
+    const ang=Math.atan2(dz,dx),da=Math.abs(((ang-base+Math.PI*3)%TAU)-Math.PI);
+    if(da<=s.arc/2){hurtEnemy(e,s.dmg,undefined,mul);hit=true;}}
+  for(let k=0;k<11;k++){const a=base+(k/10-.5)*s.arc;spawnParts(px+Math.cos(a)*s.range*.6,1.1,pz+Math.sin(a)*s.range*.6,0xFFB13D,1);}
+  if(hit){ST.shake=Math.max(ST.shake,.2);sfx.shot();}}
 const PASSIVES={
   speed:{name:'Fleetfoot',max:5,d:'+8% move speed'},magnet:{name:'Drawing Heat',max:5,d:'+30% pickup radius'},
   vigor:{name:'Stoked Heart',max:5,d:'+20 max health, heal 20'},regen:{name:'Banked Coals',max:5,d:'+0.5 health / sec'},
@@ -1090,7 +1119,7 @@ function newRun(mode,clevel){
     regen:1+.3*fr('mend'),crit:.05,greed:1+.15*fr('greed'),hitFlash:0,bossN:0,outFrac:0,
     mode,clevel,won:false,coop:false,isHost:false,p2:null,down:false,enemyId:1,
     cmod:(mode==='campaign'?campEntry(clevel).mod:null),cname:(mode==='campaign'?campEntry(clevel).name:''),
-    weapons:{bolt:1},passives:{},timers:{bolt:0,nova:0},
+    weapons:(()=>{const w={};w[SAVE.startWeapon||'bolt']=1;return w;})(),passives:{},timers:{bolt:0,nova:0,scatter:0,lash:0},
     wave:0,wlevel:(mode==='campaign'?clevel:1),waveState:'break',waveTimer:2.2,isBossWave:false,spawnQueue:0,batchCd:0,waveRoster:['grub'],bossE:null,telegraphs:[],
     enemies:[],bolts:[],ebullets:[],orbs:[],coinDrops:[],over:false};
 }
@@ -1180,7 +1209,7 @@ function startWave(){
 }
 function clearWave(){
   if(ST.isBossWave){for(const e of ST.enemies)if(!e.dead)killEnemy(e);ST.bossE=null;hideBossBar();}
-  ST.waveState='break';ST.waveTimer=ST.isBossWave?5:3;
+  ST.waveState='break';ST.waveTimer=ST.isBossWave?9:7;
   const bonus=Math.floor((10+ST.wave*4)*ST.greed);ST.coins+=bonus;
   toast('Wave '+ST.wave+' cleared',ST.isBossWave?('◆ Level '+ST.wlevel+' complete · +'+bonus+' ember'):'+'+bonus+' ember','teal');
   if(ST.coop){if(ST.down){ST.down=false;ST.hp=Math.ceil(ST.maxhp*0.5);toast('Revived!','Back in the fight','teal');}if(ST.p2&&ST.p2.down){ST.p2.down=false;ST.p2.hp=Math.ceil(ST.p2.maxhp*0.5);}}
@@ -1268,9 +1297,10 @@ function nearestVisible(x,z,maxR){let best=null,bd=(maxR||1e9)**2;
     if(_proj.z>=1||Math.abs(_proj.x)>1.05||Math.abs(_proj.y)>1.08)continue; // off-screen / behind camera
     const dx=x-e.x,dz=z-e.z,d=dx*dx+dz*dz;if(d<bd){bd=d;best=e;}}
   return best;}
-function hurtEnemy(e,dmg,crit){
+function hurtEnemy(e,dmg,crit,mul){
   if(crit===undefined)crit=Math.random()<ST.crit;
-  const dealt=dmg*ST.dmgMul*(crit?2:1);e.hp-=dealt;
+  if(mul===undefined)mul=ST.dmgMul;
+  const dealt=dmg*mul*(crit?2:1);e.hp-=dealt;
   dmgNumber(e.x,e.y+e.r+.4,e.z,Math.round(dealt),crit?'crit':'enemy');
   if(e.hp<=0)killEnemy(e);else{sfx.hit();e.flash=.08;}
 }
@@ -1303,6 +1333,12 @@ function fire(dt){const T=ST.timers,W=ST.weapons;
   if(W.nova){const s=WEAPONS.nova.stat(W.nova);T.nova-=dt;
     if(T.nova<=0){T.nova=s.cd*ST.cdMul;sfx.nova();novaFx={t:.4,max:.4,r:s.radius};ST.shake=Math.max(ST.shake,.35);
       for(const e of ST.enemies){const dx=ST.px-e.x,dz=ST.pz-e.z;if(dx*dx+dz*dz<(s.radius+e.r)**2)hurtEnemy(e,s.dmg);}}}
+  if(W.scatter){const s=WEAPONS.scatter.stat(W.scatter);T.scatter=(T.scatter||0)-dt;
+    if(T.scatter<=0){T.scatter=s.cd*ST.cdMul;doScatter(ST.px,ST.pz,s,ST.dmgMul);}}
+  if(W.lash){const s=WEAPONS.lash.stat(W.lash);T.lash=(T.lash||0)-dt;
+    if(T.lash<=0){T.lash=s.cd*ST.cdMul;const tgt=nearestVisible(ST.px,ST.pz,s.range+3);
+      let dx=1,dz=0;if(tgt){dx=tgt.x-ST.px;dz=tgt.z-ST.pz;}else{dx=(keys['d']?1:0)-(keys['a']?1:0)||1;dz=(keys['s']?1:0)-(keys['w']?1:0);}
+      doLash(ST.px,ST.pz,s,ST.dmgMul,dx,dz);}}
 }
 
 /* ============ input ============ */
@@ -1310,7 +1346,8 @@ addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys[k]=true;
   if(state==='run'&&!NET.active&&(k==='p'||k==='escape'))setState('pause');
   else if(state==='pause'&&(k==='p'||k==='escape'))setState('run');
   if(k==='m'){SAVE.muted=!SAVE.muted;persist();}
-  if(state==='levelup'&&['1','2','3'].includes(k)){const c=$('luCards').children[+k-1];if(c)c.click();}
+  if(!$('levelup').classList.contains('hidden')&&['1','2','3'].includes(k)){const c=$('luCards').children[+k-1];if(c)c.click();}
+  if(!$('startpick').classList.contains('hidden')&&['1','2','3'].includes(k)){const c=$('spCards').children[+k-1];if(c)c.click();}
   if(k==='enter'){if(state==='over')$('btnRetry').click();else if(state==='home')startRun('free');}
   if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k))e.preventDefault();
 });
@@ -1325,6 +1362,7 @@ addEventListener('touchend',()=>{joyOn=false;jvx=jvy=0;joy.style.display='none';
 /* ============ update ============ */
 const tmpV=new THREE.Vector3();
 function update(dt){
+  if(ST.luLock){stepParticles(dt);return;} // co-op level-up: freeze the world while a player picks
   ST.t+=dt;
   let mx=(keys['d']||keys['arrowright']?1:0)-(keys['a']||keys['arrowleft']?1:0);
   let mz=(keys['s']||keys['arrowdown']?1:0)-(keys['w']||keys['arrowup']?1:0);
@@ -1349,8 +1387,8 @@ function update(dt){
   // co-op: move + fire + regen partner (P2), broadcast state
   if(ST.coop&&ST.isHost&&ST.p2){const p=ST.p2;
     if(!p.down){let m2x=NET.guestInput.mx,m2z=NET.guestInput.mz;const ml2=Math.hypot(m2x,m2z);if(ml2>1){m2x/=ml2;m2z/=ml2;}
-      let nx2=p.px+m2x*ST.speed*dt,nz2=p.pz+m2z*ST.speed*dt;const rr2=Math.hypot(nx2,nz2),HD=ARENA*1.35;if(rr2>HD){nx2*=HD/rr2;nz2*=HD/rr2;}p.px=nx2;p.pz=nz2;
-      p.hp=Math.min(p.maxhp,p.hp+ST.regen*dt);if(p.iframe>0)p.iframe-=dt;}
+      const psp=p.speed||17;let nx2=p.px+m2x*psp*dt,nz2=p.pz+m2z*psp*dt;const rr2=Math.hypot(nx2,nz2),HD=ARENA*1.35;if(rr2>HD){nx2*=HD/rr2;nz2*=HD/rr2;}p.px=nx2;p.pz=nz2;
+      p.hp=Math.min(p.maxhp,p.hp+(p.regen||1)*dt);if(p.iframe>0)p.iframe-=dt;}
     player2.position.set(p.px,1.4+Math.sin(ST.t*3+1)*.12,p.pz);player2.visible=true;p2core.rotation.y+=dt*1.2;p2shell.rotation.y-=dt*.8;p2light.position.set(p.px,2.6,p.pz);
     p2mark.visible=!p.down;p2mark.position.set(p.px,.06,p.pz);
     fireP2(dt);
@@ -1439,27 +1477,36 @@ function update(dt){
   }
   ST.enemies=ST.enemies.filter(e=>!e.dead);
 
-  // enemy projectiles
+  const p2co=(ST.coop&&ST.p2)?ST.p2:null;
+  // enemy projectiles — can hit either player
   for(const b of ST.ebullets){b.life-=dt;b.x+=b.vx*dt;b.z+=b.vz*dt;b.mesh.position.set(b.x,b.y,b.z);
-    const dx=b.x-ST.px,dz=b.z-ST.pz;
-    if(ST.iframe<=0&&dx*dx+dz*dz<2.6){hurtPlayer(b.dmg);b.life=0;}}
+    if(!ST.down&&ST.iframe<=0){const dx=b.x-ST.px,dz=b.z-ST.pz;if(dx*dx+dz*dz<2.6){hurtPlayer(b.dmg,1);b.life=0;continue;}}
+    if(p2co&&!p2co.down&&(p2co.iframe||0)<=0){const dx=b.x-p2co.px,dz=b.z-p2co.pz;if(dx*dx+dz*dz<2.6){hurtPlayer(b.dmg,2);b.life=0;}}}
   ST.ebullets=ST.ebullets.filter(b=>{if(b.life>0)return true;b.mesh.visible=false;return false;});
 
   for(const b of ST.bolts){b.life-=dt;b.x+=b.vx*dt;b.z+=b.vz*dt;b.mesh.position.set(b.x,1.2,b.z);
     for(const e of ST.enemies){if(e.dead)continue;const dx=b.x-e.x,dz=b.z-e.z;if(dx*dx+dz*dz<(.5+e.r)**2){
-      hurtEnemy(e,b.dmg);spawnParts(b.x,1.2,b.z,0xFFB13D,3);if(b.pierce>0)b.pierce--;else{b.life=0;}break;}}}
+      hurtEnemy(e,b.dmg,undefined,b.mul);spawnParts(b.x,1.2,b.z,0xFFB13D,3);if(b.pierce>0)b.pierce--;else{b.life=0;}break;}}}
   ST.bolts=ST.bolts.filter(b=>{if(b.life>0)return true;b.mesh.visible=false;return false;});
 
   const mag2=ST.magnet*ST.magnet;
-  for(const o of ST.orbs){const dx=ST.px-o.x,dz=ST.pz-o.z,d2=dx*dx+dz*dz;
-    o.mesh.rotation.y+=dt*3;o.mesh.position.y=.8+Math.sin(ST.t*4+o.ph)*.15;
-    if(o.pull>0||d2<mag2){o.pull+=dt;const dd=Math.sqrt(d2)||1,sp=10+o.pull*40;
+  const p2mag=p2co?(p2co.magnet||6)*(p2co.magnet||6):0;
+  // pick the nearest alive player as the target for a pickup; route XP to that player
+  function pickTarget(ox,oz){let who=1,tx=ST.px,tz=ST.pz,tm=mag2, hostOk=!ST.down;
+    if(p2co&&!p2co.down){const d1=(ST.px-ox)**2+(ST.pz-oz)**2,d2b=(p2co.px-ox)**2+(p2co.pz-oz)**2;
+      if(!hostOk||d2b<d1){who=2;tx=p2co.px;tz=p2co.pz;tm=p2mag;}}
+    else if(!hostOk){return null;}
+    return {who,tx,tz,tm};}
+  for(const o of ST.orbs){o.mesh.rotation.y+=dt*3;o.mesh.position.y=.8+Math.sin(ST.t*4+o.ph)*.15;
+    const T=pickTarget(o.x,o.z);if(!T)continue;const dx=T.tx-o.x,dz=T.tz-o.z,d2=dx*dx+dz*dz;
+    if(o.pull>0||d2<T.tm){o.pull+=dt;const dd=Math.sqrt(d2)||1,sp=10+o.pull*40;
       o.x+=dx/dd*sp*dt;o.z+=dz/dd*sp*dt;o.mesh.position.x=o.x;o.mesh.position.z=o.z;
-      if(dd<1.4){o.got=true;gainXp(o.v);}}}
+      if(dd<1.4){o.got=true;gainXp(o.v,T.who);}}}
   ST.orbs=ST.orbs.filter(o=>{if(!o.got)return true;o.mesh.visible=false;return false;});
 
-  for(const c of ST.coinDrops){const dx=ST.px-c.x,dz=ST.pz-c.z,d2=dx*dx+dz*dz;c.mesh.rotation.z+=dt*4;c.mesh.rotation.y+=dt*2;
-    if(d2<mag2*1.6){const dd=Math.sqrt(d2)||1;c.x+=dx/dd*14*dt;c.z+=dz/dd*14*dt;c.mesh.position.x=c.x;c.mesh.position.z=c.z;
+  for(const c of ST.coinDrops){c.mesh.rotation.z+=dt*4;c.mesh.rotation.y+=dt*2;
+    const T=pickTarget(c.x,c.z);if(!T)continue;const dx=T.tx-c.x,dz=T.tz-c.z,d2=dx*dx+dz*dz;
+    if(d2<T.tm*1.6){const dd=Math.sqrt(d2)||1;c.x+=dx/dd*14*dt;c.z+=dz/dd*14*dt;c.mesh.position.x=c.x;c.mesh.position.z=c.z;
       if(dd<1.6){c.got=true;ST.coins++;sfx.coin();}}}
   ST.coinDrops=ST.coinDrops.filter(c=>{if(!c.got)return true;c.mesh.visible=false;return false;});
 
@@ -1490,40 +1537,62 @@ function hurtPlayer(dmg,who){who=who||1;
   const d=Math.max(1,Math.min(Math.round(dmg),Math.ceil(ST.maxhp*0.45)));ST.hp-=d;ST.iframe=.7;ST.shake=.6;sfx.hurt();
   spawnParts(ST.px,1.2,ST.pz,0xFF4F66,8);dmgNumber(ST.px,2.6,ST.pz,'-'+d,'player');ST.hitFlash=1;
   if(ST.hp<=0){ST.hp=0; if(ST.coop){ST.down=true;toast('You are down','Your partner can revive you','teal');if(ST.p2.down)endRun();} else endRun();}}
-function gainXp(v){ST.xp+=v;sfx.gem();
+function gainXp(v,who){
+  if(who===2&&ST.p2){const p=ST.p2;p.xp=(p.xp||0)+v;sfx.gem();
+    while(p.xp>=p.xpNext){p.xp-=p.xpNext;p.level++;p.xpNext=Math.floor(8+p.level*4+Math.pow(p.level,1.35));p.pendingLU=(p.pendingLU||0)+1;}
+    tryCoopLU();return;}
+  ST.xp+=v;sfx.gem();
   while(ST.xp>=ST.xpNext){ST.xp-=ST.xpNext;ST.level++;ST.xpNext=Math.floor(8+ST.level*4+Math.pow(ST.level,1.35));ST.pendingLU++;}
-  // co-op: auto-apply upgrades to the shared build (no blocking menu to keep both players in sync)
-  if(ST.coop){while(ST.pendingLU>0){ST.pendingLU--;autoUpgrade();}return;}
+  if(ST.coop){tryCoopLU();return;}
   if(ST.pendingLU>0&&state==='run'){ST.pendingLU--;openLevelUp();}}
-function autoUpgrade(){const pool=buildPool();if(!pool.length){ST.hp=Math.min(ST.maxhp,ST.hp+40);return;}
-  // prefer a new weapon, then any weapon upgrade, else a random talent
-  let pick=pool.find(p=>p.kind==='w'&&p.fresh)||pool.find(p=>p.kind==='w')||pool[Math.floor(Math.random()*pool.length)];
-  if(pick.kind==='w')ST.weapons[pick.id]=(ST.weapons[pick.id]|0)+1;
-  else{ST.passives[pick.id]=(ST.passives[pick.id]|0)+1;if(pick.id==='vigor'){ST.maxhp+=20;ST.hp=Math.min(ST.maxhp,ST.hp+20);if(ST.p2){ST.p2.maxhp+=20;ST.p2.hp=Math.min(ST.p2.maxhp,ST.p2.hp+20);}}applyPassives();}
-  buildChips();}
 
 /* ============ level up ============ */
-function buildPool(){const pool=[];const nw=Object.keys(ST.weapons).length;
-  for(const id in WEAPONS){const lv=ST.weapons[id]|0;
+function buildPoolFrom(weapons,passives,excludeW){const pool=[];const nw=Object.keys(weapons).length;
+  for(const id in WEAPONS){if(excludeW&&excludeW.includes(id))continue;const lv=weapons[id]|0;
     if(lv>0&&lv<WEAPONS[id].max)pool.push({kind:'w',id});else if(lv===0&&nw<4)pool.push({kind:'w',id,fresh:true});}
-  for(const id in PASSIVES)if((ST.passives[id]|0)<PASSIVES[id].max)pool.push({kind:'p',id});
+  for(const id in PASSIVES)if((passives[id]|0)<PASSIVES[id].max)pool.push({kind:'p',id});
   return pool;}
-function openLevelUp(){const pool=buildPool(),picks=[];
-  while(picks.length<3&&pool.length)picks.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]);
-  if(!picks.length)picks.push({kind:'heal'});
-  const wrap=$('luCards');wrap.innerHTML='';$('luLevel').textContent=ST.level;
+function buildPool(){return buildPoolFrom(ST.weapons,ST.passives);}
+function pickThree(pool){const picks=[],p=pool.slice();
+  while(picks.length<3&&p.length)picks.push(p.splice(Math.floor(Math.random()*p.length),1)[0]);
+  if(!picks.length)picks.push({kind:'heal'});return picks;}
+// render 3 upgrade cards into #luCards. curW/curP give current levels for labels; onPick(pk,idx) applies.
+function renderLuCards(picks,curW,curP,onPick){const wrap=$('luCards');wrap.innerHTML='';
   picks.forEach((pk,idx)=>{const c=document.createElement('button');c.className='card';
     let k,nm,lv='',d,isNew=false;
     if(pk.kind==='heal'){k='Salve';nm='Warm Ash';d='Restore 40 health';}
-    else if(pk.kind==='w'){const w=WEAPONS[pk.id],cur=ST.weapons[pk.id]|0;k=cur?'Weapon':'New Weapon';isNew=!cur;nm=w.name;lv='Lv '+(cur+1)+' / '+w.max;d=w.blurb[cur];}
-    else{const p=PASSIVES[pk.id],cur=ST.passives[pk.id]|0;k='Talent';nm=p.name;lv='Rank '+(cur+1)+' / '+p.max;d=p.d;}
+    else if(pk.kind==='w'){const w=WEAPONS[pk.id],cur=curW[pk.id]|0;k=cur?'Weapon':'New Weapon';isNew=!cur;nm=w.name;lv='Lv '+(cur+1)+' / '+w.max;d=w.blurb[cur];}
+    else{const pp=PASSIVES[pk.id],cur=curP[pk.id]|0;k='Talent';nm=pp.name;lv='Rank '+(cur+1)+' / '+pp.max;d=pp.d;}
     c.innerHTML='<div class="idx">'+(idx+1)+'</div><div class="ci"><div class="k">'+k+'</div><div class="nm'+(isNew?' new':'')+'">'+nm+'</div>'+(lv?'<div class="lv">'+lv+'</div>':'')+'<div class="d">'+d+'</div></div>';
-    c.onclick=()=>{if(pk.kind==='heal')ST.hp=Math.min(ST.maxhp,ST.hp+40);
-      else if(pk.kind==='w')ST.weapons[pk.id]=(ST.weapons[pk.id]|0)+1;
-      else{ST.passives[pk.id]=(ST.passives[pk.id]|0)+1;if(pk.id==='vigor'){ST.maxhp+=20;ST.hp=Math.min(ST.maxhp,ST.hp+20);}applyPassives();}
-      buildChips();if(ST.pendingLU>0){ST.pendingLU--;openLevelUp();}else setState('run');};
-    wrap.appendChild(c);});
+    c.onclick=()=>onPick(pk,idx);wrap.appendChild(c);});}
+// apply a pick to a player-state P (has weapons,passives,hp,maxhp); recompute() refreshes derived stats
+function applyPickTo(pk,P,recompute){
+  if(pk.kind==='heal'){P.hp=Math.min(P.maxhp,P.hp+40);return;}
+  if(pk.kind==='w')P.weapons[pk.id]=(P.weapons[pk.id]|0)+1;
+  else{P.passives[pk.id]=(P.passives[pk.id]|0)+1;if(pk.id==='vigor'){P.maxhp+=20;P.hp=Math.min(P.maxhp,P.hp+20);}}
+  if(recompute)recompute();}
+function openLevelUp(){const picks=pickThree(buildPool());$('luEyebrow').innerHTML='Level <span id="luLevel">'+ST.level+'</span> reached';
+  renderLuCards(picks,ST.weapons,ST.passives,(pk)=>{applyPickTo(pk,ST,applyPassives);buildChips();
+    if(ST.pendingLU>0){ST.pendingLU--;openLevelUp();}else setState('run');});
   sfx.lvl();setState('levelup');}
+/* ---- co-op level ups: pause both, the leveling player picks on their own screen ---- */
+const coopLU={open:false,who:0,picks:null};
+function applyPassivesP2(){const p=ST.p2.passives,P=ST.p2;
+  P.speed=17*(1+.08*(p.speed|0));P.dmgMul=(1+.10*(p.might|0));P.cdMul=Math.pow(.92,p.haste|0);
+  P.magnet=6*(1+.30*(p.magnet|0));P.regen=1+.5*(p.regen|0);P.crit=.05+.06*(p.crit|0);}
+function tryCoopLU(){if(!ST.coop||!ST.isHost||coopLU.open)return;
+  if(ST.pendingLU>0){ST.pendingLU--;coopLU.open=true;coopLU.who=1;ST.luLock=true;$('coopwait').classList.add('hidden');
+    const picks=pickThree(buildPool());coopLU.picks=picks;
+    $('luEyebrow').innerHTML='Level <span id="luLevel">'+ST.level+'</span> — your upgrade';
+    renderLuCards(picks,ST.weapons,ST.passives,(pk)=>{applyPickTo(pk,ST,applyPassives);buildChips();
+      $('levelup').classList.add('hidden');coopLU.open=false;ST.luLock=false;netSend({t:'resume'});tryCoopLU();});
+    $('levelup').classList.remove('hidden');sfx.lvl();netSend({t:'pause'});return;}
+  if(ST.p2&&(ST.p2.pendingLU||0)>0){ST.p2.pendingLU--;coopLU.open=true;coopLU.who=2;ST.luLock=true;
+    const picks=pickThree(buildPoolFrom(ST.p2.weapons,ST.p2.passives,['orbit']));coopLU.picks=picks;
+    netSend({t:'offer',picks:picks.map(p=>({kind:p.kind,id:p.id})),w:ST.p2.weapons,p:ST.p2.passives,lvl:ST.p2.level});
+    $('coopwait').classList.remove('hidden');sfx.lvl();return;}}
+function hostApplyGuestPick(i){if(coopLU.who!==2||!coopLU.picks)return;const pk=coopLU.picks[i]||coopLU.picks[0];
+  applyPickTo(pk,ST.p2,applyPassivesP2);$('coopwait').classList.add('hidden');coopLU.open=false;ST.luLock=false;netSend({t:'resume'});tryCoopLU();}
 function buildChips(){const el=$('chips');el.innerHTML='';
   for(const id in ST.weapons){const s=document.createElement('span');s.className='chip';s.innerHTML=WEAPONS[id].name+' <b>'+ST.weapons[id]+'</b>';el.appendChild(s);}}
 
@@ -1533,7 +1602,7 @@ function updateHud(){$('hpbar').firstElementChild.style.width=(100*clamp(ST.hp/S
   $('xpbar').firstElementChild.style.width=(100*clamp(ST.xp/ST.xpNext,0,1))+'%';
   $('timer').textContent=fmtTime(ST.t);$('lvlbadge').textContent=ST.level;
   $('val-kills').textContent=ST.kills;$('val-ember').textContent=ST.coins;
-  $('waveInfo').textContent='LV '+ST.wlevel+' · WAVE '+ST.wave+(ST.isBossWave?' · BOSS':'');
+  $('waveInfo').textContent='LV '+ST.wlevel+' · WAVE '+ST.wave+(ST.isBossWave?' · BOSS':'')+(ST.waveState==='break'&&ST.wave>0?' · NEXT IN '+Math.ceil(Math.max(0,ST.waveTimer))+'s':'');
   if(ST.bossE&&!ST.bossE.dead)$('bossbar').querySelector('.bb-bar>span').style.width=(100*clamp(ST.bossE.hp/ST.bossE.maxhp,0,1))+'%';
   const of=ST.outFrac||0;boundGlowEl.style.opacity=(of*0.62).toFixed(3);boundWarnEl.style.display=of>0.12?'block':'none';}
 const boundGlowEl=$('boundGlow'),boundWarnEl=$('boundWarn');
@@ -1735,8 +1804,18 @@ function clearScene(){for(const t in enemyPool)for(const g of enemyPool[t]){g.vi
   for(const m of boltMeshes)m.visible=false;for(const m of orbMeshes)m.visible=false;
   for(const m of coinMeshes)m.visible=false;for(const m of bladeMeshes)m.visible=false;for(const m of ebulletMeshes)m.visible=false;
   for(const p of parts)p.life=0;for(const d of dnActive)d.el.style.opacity='0';dnActive.length=0;flashEl.style.opacity='0';}
-let lastRun={mode:'free',clevel:1};
-function startRun(mode,clevel){mode=mode||'free';clevel=clevel||1;lastRun={mode,clevel};
+let lastRun={mode:'free',clevel:1},pendingStart={mode:'free',clevel:1};
+const START_CHOICES=['bolt','nova','orbit'];
+// entry point from menus: let the player choose a starting ability first
+function startRun(mode,clevel){pendingStart={mode:mode||'free',clevel:clevel||1};openStartPick();}
+function openStartPick(){const wrap=$('spCards');wrap.innerHTML='';
+  START_CHOICES.forEach((id,idx)=>{const w=WEAPONS[id];const c=document.createElement('button');c.className='card';
+    const sel=(SAVE.startWeapon||'bolt')===id;
+    c.innerHTML='<div class="idx">'+(idx+1)+'</div><div class="ci"><div class="k">Starting Ability</div><div class="nm new">'+w.name+(sel?' ✓':'')+'</div><div class="d">'+w.blurb[0]+'</div></div>';
+    c.onclick=()=>{SAVE.startWeapon=id;persist();$('startpick').classList.add('hidden');doStartRun(pendingStart.mode,pendingStart.clevel);};
+    wrap.appendChild(c);});
+  $('startpick').classList.remove('hidden');}
+function doStartRun(mode,clevel){mode=mode||'free';clevel=clevel||1;lastRun={mode,clevel};
   clearScene();newRun(mode,clevel);applyPassives();buildChips();
   hideBossBar();for(const m of teleMeshes)m.material.opacity=0;clearTelegraphs();
   boundGlowEl.style.opacity='0';boundWarnEl.style.display='none';
@@ -1746,6 +1825,7 @@ function winCampaign(){if(ST.over)return;ST.won=true;
   if(SAVE.campaign.unlocked<ST.clevel+1){SAVE.campaign.unlocked=ST.clevel+1;persist();}
   bannerMsg(ST.cname||('LEVEL '+ST.clevel),'COMPLETE');endRun();}
 function endRun(){if(ST.over)return;ST.over=true;
+  ST.luLock=false;coopLU.open=false;$('levelup').classList.add('hidden');$('coopwait').classList.add('hidden');
   if(ST.coop&&ST.isHost){netBroadcast();player2.visible=false;}
   const earned=Math.floor((ST.coins+Math.floor(ST.t/20)+ST.level*2)*ST.greed);SAVE.coins+=earned;
   let best=false;if(ST.t>SAVE.bestTime){SAVE.bestTime=ST.t;best=true;}if(ST.kills>SAVE.bestKills){SAVE.bestKills=ST.kills;best=true;}
@@ -1778,8 +1858,9 @@ function endRun(){if(ST.over)return;ST.over=true;
 $('btnCampaign').onclick=()=>setState('levels');
 $('btnFree').onclick=()=>startRun('free');
 $('btnRetry').onclick=()=>{ if(NET.role==='guest'||NET.active||(ST&&ST.coop)){netReset();player2.visible=false;setState('home');return;}
-  if(ST&&ST.won&&lastRun.mode==='campaign')startRun('campaign',Math.min(lastRun.clevel+1,SAVE.campaign.unlocked));
-  else startRun(lastRun.mode,lastRun.clevel); };
+  // retry/next keeps the ability you already chose (no re-prompt)
+  if(ST&&ST.won&&lastRun.mode==='campaign')doStartRun('campaign',Math.min(lastRun.clevel+1,SAVE.campaign.unlocked));
+  else doStartRun(lastRun.mode,lastRun.clevel); };
 $('btnHome').onclick=()=>{if(NET.active){netReset();player2.visible=false;}setState('home');};
 $('btnSkins').onclick=()=>setState('skins');$('btnForge').onclick=()=>setState('forge');
 $('btnAwards').onclick=()=>setState('awards');
@@ -1823,8 +1904,18 @@ function netMsg(m){
   else if(m.t==='start'){startCoopGuest();}
   else if(m.t==='state'){NET.state=m;}
   else if(m.t==='input'){NET.guestInput.mx=m.mx;NET.guestInput.mz=m.mz;}
+  // ---- co-op level-up sync ----
+  else if(m.t==='offer'){ // guest: it's my turn to pick an upgrade
+    coopLU.open=true;coopLU.who=2;$('coopwait').classList.add('hidden');
+    $('luEyebrow').innerHTML='Level <span id="luLevel">'+(m.lvl||2)+'</span> — choose an upgrade';
+    renderLuCards(m.picks,m.w||{},m.p||{},(pk,idx)=>{netSend({t:'pick',i:idx});$('levelup').classList.add('hidden');$('coopwait').classList.remove('hidden');});
+    $('levelup').classList.remove('hidden');sfx.lvl();}
+  else if(m.t==='pause'){coopLU.open=true;coopLU.who=1;$('levelup').classList.add('hidden');$('coopwait').classList.remove('hidden');}
+  else if(m.t==='resume'){coopLU.open=false;$('levelup').classList.add('hidden');$('coopwait').classList.add('hidden');}
+  else if(m.t==='pick'){hostApplyGuestPick(m.i|0);} // host: apply guest's chosen upgrade
 }
-function peerLeft(msg){ if(NET.active){toast('Duo ended',msg,'teal'); if(NET.role==='host'&&ST&&!ST.over){ST.coop=false;player2.visible=false;} else if(NET.role==='guest'){ if(state==='run')setState('home'); } NET.active=false; }
+function peerLeft(msg){ coopLU.open=false;if(ST)ST.luLock=false;$('coopwait').classList.add('hidden');$('levelup').classList.add('hidden');
+  if(NET.active){toast('Duo ended',msg,'teal'); if(NET.role==='host'&&ST&&!ST.over){ST.coop=false;player2.visible=false;} else if(NET.role==='guest'){ if(state==='run')setState('home'); } NET.active=false; }
   if(state==='duos'){NET.peerHere=false;showLobby();$('lobbyStatus').textContent=msg;} }
 function showLobby(){$('duoPick').classList.add('hidden');$('duoLobby').classList.remove('hidden');$('roomCode').textContent=NET.code||'----';
   if(NET.role==='host'){$('btnDuoStart').classList.remove('hidden');$('btnDuoStart').disabled=!NET.peerHere;$('lobbyStatus').textContent=NET.peerHere?'Partner connected — press Start!':'Waiting for a friend to join…';}
@@ -1837,33 +1928,46 @@ function startCoopHost(){NET.active=true;NET.role='host';netSend({t:'start'});
   clearScene();newRun('free');applyPassives();buildChips();
   hideBossBar();for(const m of teleMeshes)m.material.opacity=0;clearTelegraphs();
   boundGlowEl.style.opacity='0';boundWarnEl.style.display='none';
-  ST.coop=true;ST.isHost=true;ST.down=false;
-  ST.p2={px:6,pz:0,hp:ST.maxhp,maxhp:ST.maxhp,down:false,timers:{bolt:0,nova:0}};
+  ST.coop=true;ST.isHost=true;ST.down=false;ST.luLock=false;coopLU.open=false;coopLU.who=0;
+  ST.p2={px:6,pz:0,hp:100,maxhp:100,down:false,timers:{bolt:0,nova:0,scatter:0,lash:0},
+    level:1,xp:0,xpNext:12,pendingLU:0,weapons:{bolt:1},passives:{}};
+  applyPassivesP2();
   player2.visible=true;camera.position.set(CAM_OFF.x,CAM_OFF.y,CAM_OFF.z);setState('run');showTip();}
 /* guest: render the host's world, control own player only */
 function startCoopGuest(){NET.active=true;NET.role='guest';GUEST.px=6;GUEST.pz=0;GUEST.overShown=false;
+  coopLU.open=false;coopLU.who=0;$('levelup').classList.add('hidden');$('coopwait').classList.add('hidden');
   clearScene();for(const [id,ge] of GUEST.enemies)ge.g.visible=false;GUEST.enemies.clear();
   player2.visible=true;player.visible=true;setState('run');showTip();}
-function fireP2(dt){const T=ST.p2.timers,W=ST.weapons,p=ST.p2;if(p.down)return;
+function fireP2(dt){const p=ST.p2,T=p.timers,W=p.weapons,cd=p.cdMul||1,mul=p.dmgMul||1;if(p.down)return;
   if(W.bolt){const s=WEAPONS.bolt.stat(W.bolt);T.bolt-=dt;
     if(T.bolt<=0){let best=null,bd=62*62;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z,d=dx*dx+dz*dz;if(d<bd){_proj.set(e.x,e.y,e.z).project(camera);if(_proj.z<1&&Math.abs(_proj.x)<1.1&&Math.abs(_proj.y)<1.1){bd=d;best=e;}}}
-      if(best){T.bolt=s.cd*ST.cdMul;const base=Math.atan2(best.z-p.pz,best.x-p.px);
+      if(best){T.bolt=s.cd*cd;const base=Math.atan2(best.z-p.pz,best.x-p.px);
         for(let i=0;i<s.count;i++){const a=base+(i-(s.count-1)/2)*.16;const bm=take(boltMeshes);if(!bm)break;bm.visible=true;bm.position.set(p.px,1.2,p.pz);
-          ST.bolts.push({mesh:bm,x:p.px,z:p.pz,vx:Math.cos(a)*34,vz:Math.sin(a)*34,dmg:s.dmg,pierce:s.pierce,life:1.6});}}}}
-  if(W.nova){const s=WEAPONS.nova.stat(W.nova);T.nova-=dt;
-    if(T.nova<=0){T.nova=s.cd*ST.cdMul;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z;if(dx*dx+dz*dz<(s.radius+e.r)**2)hurtEnemy(e,s.dmg);}}}}
+          ST.bolts.push({mesh:bm,x:p.px,z:p.pz,vx:Math.cos(a)*34,vz:Math.sin(a)*34,dmg:s.dmg,pierce:s.pierce,life:1.6,mul});}}}}
+  if(W.nova){const s=WEAPONS.nova.stat(W.nova);T.nova=(T.nova||0)-dt;
+    if(T.nova<=0){T.nova=s.cd*cd;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z;if(dx*dx+dz*dz<(s.radius+e.r)**2)hurtEnemy(e,s.dmg,undefined,mul);}}}
+  if(W.scatter){const s=WEAPONS.scatter.stat(W.scatter);T.scatter=(T.scatter||0)-dt;
+    if(T.scatter<=0){T.scatter=s.cd*cd;doScatter(p.px,p.pz,s,mul);}}
+  if(W.lash){const s=WEAPONS.lash.stat(W.lash);T.lash=(T.lash||0)-dt;
+    if(T.lash<=0){T.lash=s.cd*cd;let best=null,bd=(s.range+3)**2;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z,d=dx*dx+dz*dz;if(d<bd){bd=d;best=e;}}
+      doLash(p.px,p.pz,s,mul,best?best.x-p.px:1,best?best.z-p.pz:0);}}}
 function netBroadcast(){if(!NET.active||!ST||!ST.isHost)return;
   const en=[];for(const e of ST.enemies){if(e.dead)continue;en.push([e.id,ENEMY_TYPES.indexOf(e.type),Math.round(e.x*10)/10,Math.round(e.z*10)/10,Math.max(0,Math.min(255,Math.round(255*e.hp/e.maxhp)))]);if(en.length>=60)break;}
   const orbs=[];for(const o of ST.orbs){orbs.push([Math.round(o.x),Math.round(o.z)]);if(orbs.length>=40)break;}
   const tg=ST.telegraphs.map(t=>[Math.round(t.x),Math.round(t.z),Math.round(t.r*10)/10,t.linger?1:0]);
+  const bo=[];for(const b of ST.bolts){bo.push([Math.round(b.x*10)/10,Math.round(b.z*10)/10]);if(bo.length>=64)break;}
+  const eb=[];for(const b of ST.ebullets){eb.push([Math.round(b.x*10)/10,Math.round(b.z*10)/10]);if(eb.length>=50)break;}
   netSend({t:'state',p1:[Math.round(ST.px*10)/10,Math.round(ST.pz*10)/10,Math.round(ST.hp),ST.maxhp,ST.down?1:0],
     p2:[Math.round(ST.p2.px*10)/10,Math.round(ST.p2.pz*10)/10,Math.round(ST.p2.hp),ST.p2.maxhp,ST.p2.down?1:0],
-    en,orbs,tg,w:ST.wave,l:ST.wlevel,b:ST.isBossWave?1:0,
+    en,orbs,tg,bo,eb,w:ST.wave,l:ST.wlevel,b:ST.isBossWave?1:0,
+    wt:ST.waveState==='break'&&ST.wave>0?Math.ceil(Math.max(0,ST.waveTimer)):0,
+    p2l:ST.p2.level,p2x:ST.p2.xpNext?Math.round(100*ST.p2.xp/ST.p2.xpNext):0,
     bf:ST.bossE&&!ST.bossE.dead?Math.round(255*ST.bossE.hp/ST.bossE.maxhp):-1,bn:ST.bossE&&!ST.bossE.dead?ENEMY_TYPES.indexOf(ST.bossE.type):-1,
     over:ST.over?1:0});}
 /* guest per-frame */
 const _gmid=new THREE.Vector3();
 function guestFrame(dt){const st=NET.state;
+  if(coopLU.open){idleT+=dt;stepParticles(dt);return;} // frozen while someone picks an upgrade
   // own input → predict + send
   let mx=(keys['d']||keys['arrowright']?1:0)-(keys['a']||keys['arrowleft']?1:0);
   let mz=(keys['s']||keys['arrowdown']?1:0)-(keys['w']||keys['arrowup']?1:0);
@@ -1877,7 +1981,7 @@ function guestFrame(dt){const st=NET.state;
     pmark.visible=!st.p1[4];pmark.position.set(st.p1[0],.06,st.p1[1]);p2mark.visible=!st.p2[4];p2mark.position.set(GUEST.px,.06,GUEST.pz);
     p2core.rotation.y+=dt;p2light.position.set(GUEST.px,2.6,GUEST.pz);
     pcore.rotation.y+=dt;emberLight.position.set(st.p1[0],2.6,st.p1[1]);
-    guestSyncEnemies(st.en,dt);guestSyncOrbs(st.orbs||[]);guestSyncTele(st.tg||[]);guestHud(st);
+    guestSyncEnemies(st.en,dt);guestSyncOrbs(st.orbs||[]);guestSyncTele(st.tg||[]);guestSyncBolts(st.bo||[]);guestSyncEbullets(st.eb||[]);guestHud(st);
     _gmid.set((st.p1[0]+GUEST.px)/2,0,(st.p1[1]+GUEST.pz)/2).add(CAM_OFF);
     camera.position.lerp(_gmid,Math.min(1,6*dt));camera.lookAt((st.p1[0]+GUEST.px)/2,1,(st.p1[1]+GUEST.pz)/2);
     if(st.over&&!GUEST.overShown){GUEST.overShown=true;
@@ -1898,11 +2002,13 @@ function guestSyncEnemies(en,dt){const seen=new Set();
     const hb=ud.hpbar;if(hb){const mi=MODELINFO[ge.type];hb.position.set(ge.x,mi?mi.headY:2.5,ge.z);hb.quaternion.copy(camera.quaternion);
       const fill=hb.userData.fill,w=hb.userData.w,frac=ge.hpf==null?1:ge.hpf;fill.scale.x=Math.max(.0001,w*frac);fill.position.x=-(w*(1-frac))/2;}}}
 function guestSyncOrbs(orbs){for(let i=0;i<orbMeshes.length;i++){if(i<orbs.length){orbMeshes[i].visible=true;orbMeshes[i].position.set(orbs[i][0],.8,orbs[i][1]);orbMeshes[i].rotation.y+=.05;}else orbMeshes[i].visible=false;}}
+function guestSyncBolts(bo){for(let i=0;i<boltMeshes.length;i++){if(i<bo.length){boltMeshes[i].visible=true;boltMeshes[i].position.set(bo[i][0],1.2,bo[i][1]);}else boltMeshes[i].visible=false;}}
+function guestSyncEbullets(eb){for(let i=0;i<ebulletMeshes.length;i++){if(i<eb.length){ebulletMeshes[i].visible=true;ebulletMeshes[i].position.set(eb[i][0],1.1,eb[i][1]);}else ebulletMeshes[i].visible=false;}}
 function guestSyncTele(tg){for(let i=0;i<teleMeshes.length;i++){if(i<tg.length){const t=tg[i];teleMeshes[i].position.set(t[0],.07,t[1]);teleMeshes[i].scale.set(t[2],t[2],t[2]);teleMeshes[i].material.color.setHex(t[3]?0x7CFF3D:0xFF4F66);teleMeshes[i].material.opacity=.5;}else teleMeshes[i].material.opacity=0;}}
 function guestHud(st){const mh=st.p2[3]||100,hp=st.p2[2];
   $('hpbar').firstElementChild.style.width=(100*clamp(hp/mh,0,1))+'%';$('hptext').textContent=Math.max(0,Math.ceil(hp))+' / '+mh;
-  $('xpbar').firstElementChild.style.width='0%';$('lvlbadge').textContent='2';
-  $('waveInfo').textContent='LV '+st.l+' · WAVE '+st.w+(st.b?' · BOSS':'')+' · CO-OP';
+  $('xpbar').firstElementChild.style.width=(st.p2x||0)+'%';$('lvlbadge').textContent=st.p2l||1;
+  $('waveInfo').textContent='LV '+st.l+' · WAVE '+st.w+(st.b?' · BOSS':(st.wt?' · NEXT IN '+st.wt+'s':''))+' · CO-OP';
   $('val-kills').textContent='CO-OP';$('val-ember').textContent=st.p1[4]?'P1 DOWN':'';
   if(st.bf>=0){$('bossbar').classList.remove('hidden');const bt=ENEMY_TYPES[st.bn];$('bossName').textContent=(ETYPE[bt]?ETYPE[bt].name:'BOSS').toUpperCase();$('bossTier').textContent='★'.repeat(TIER[bt]||3);$('bossbar').querySelector('.bb-bar>span').style.width=(100*st.bf/255)+'%';}else $('bossbar').classList.add('hidden');}
 
@@ -1930,6 +2036,10 @@ loadModels().then(finishBoot).catch(e=>{console.error('boot load error',e);finis
 window.__ST=()=>ST;window.__state=()=>state;window.__startRun=startRun;window.__update=update;window.__keys=keys;window.__SAVE=()=>SAVE;window.__setState=setState;
 window.__spawnBoss=(t)=>{const b=spawnEnemy(t);if(b){b.isWaveBoss=true;b.atkSeq=0;ST.bossE=b;showBossBar(b);}return b?b.type:null;};
 window.__bossAttack=()=>{if(ST.bossE)bossAttack(ST.bossE);return ST.bossE&&ST.bossE.type;};
+window.__NET=()=>NET;window.__coopLU=()=>coopLU;window.__netMsg=netMsg;window.__gainXp=gainXp;window.__tryCoopLU=tryCoopLU;window.__netBroadcast=netBroadcast;
+window.__fakeCoopHost=(sent)=>{ST.coop=true;ST.isHost=true;ST.luLock=false;coopLU.open=false;coopLU.who=0;
+  ST.p2={px:6,pz:0,hp:100,maxhp:100,down:false,timers:{bolt:0,nova:0,scatter:0,lash:0},level:1,xp:0,xpNext:12,pendingLU:0,weapons:{bolt:1},passives:{}};applyPassivesP2();
+  NET.active=true;NET.role='host';NET.ws={readyState:1,send:o=>sent.push(JSON.parse(o))};return true;};
 </script>
 </body>
 </html>
