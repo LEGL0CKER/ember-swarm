@@ -1115,8 +1115,8 @@ function updateDamageNumbers(dt){
 /* ============ game state ============ */
 let state='home';let ST=null;const keys={};
 const WEAPONS={
-  bolt:{name:'Ember Bolt',max:5,blurb:['Hurls a bolt at the nearest foe','One more bolt','Bolts hit harder','Bolts pierce, one more','Two more bolts, harder'],
-    stat:l=>({count:[1,2,2,3,5][l-1],dmg:[12,12,18,18,26][l-1],pierce:[0,0,0,1,1][l-1],cd:.5})},
+  bolt:{name:'Ember Bolt',max:5,blurb:['Hurls a bolt at the nearest foe','+1 bolt','+1 bolt & harder hits','+1 bolt, now pierces','+1 bolt & harder hits'],
+    stat:l=>({count:[1,2,3,4,5][l-1],dmg:[12,14,17,20,26][l-1],pierce:[0,0,0,1,1][l-1],cd:.5})},
   orbit:{name:'Cinder Ring',max:4,blurb:['A blade of cinders circles you','A second blade','Wider, sharper','A third blade'],
     stat:l=>({count:[1,2,3,4][l-1],dmg:[10,10,15,20][l-1],radius:[4,4,5,5.5][l-1]})},
   nova:{name:'Ash Nova',max:5,blurb:['Periodic burst scorches nearby foes','Bigger burst','Far harder','Faster & wider','A firestorm'],
