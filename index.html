@@ -1093,6 +1093,10 @@ const WEAPONS={
     stat:l=>({count:[6,8,10,12,16][l-1],dmg:[9,9,13,13,18][l-1],cd:[2.6,2.4,2.2,2.0,1.8][l-1]})},
   lash:{name:'Cinder Lash',max:5,blurb:['Sweep a fiery arc in front of you','A wider arc','Sears far harder','Wider & faster','A whirl of flame'],
     stat:l=>({arc:[1.1,1.4,1.4,1.8,2.4][l-1],range:[7,7,8,8.5,9][l-1],dmg:[16,16,24,24,34][l-1],cd:[1.4,1.2,1.1,1.0,.85][l-1]})},
+  lance:{name:'Frost Lance',max:5,blurb:['Hurl a spear that pierces everything in a line','Longer, faster','Pierces far harder','Fires quicker','A glacial impaling'],
+    stat:l=>({dmg:[17,17,25,25,35][l-1],cd:[.9,.8,.72,.62,.52][l-1],speed:[46,46,50,50,54][l-1]})},
+  chain:{name:'Spark Chain',max:5,blurb:['Lightning leaps between nearby foes','One more jump','Stronger arcs','Two more jumps','A storm of chains'],
+    stat:l=>({dmg:[12,12,17,17,24][l-1],cd:[1.1,1.0,.92,.82,.72][l-1],jumps:[3,4,4,5,6][l-1],range:[9,9,10,10,11][l-1]})},
 };
 // shared weapon effects so BOTH players (host + partner) can wield them
 function doScatter(px,pz,s,mul){for(let i=0;i<s.count;i++){const a=i/s.count*TAU;const bm=take(boltMeshes);if(!bm)break;
@@ -1104,6 +1108,19 @@ function doLash(px,pz,s,mul,dirx,dirz){const base=Math.atan2(dirz,dirx);let hit=
     if(da<=s.arc/2){hurtEnemy(e,s.dmg,undefined,mul);hit=true;}}
   for(let k=0;k<11;k++){const a=base+(k/10-.5)*s.arc;spawnParts(px+Math.cos(a)*s.range*.6,1.1,pz+Math.sin(a)*s.range*.6,0xFFB13D,1);}
   if(hit){ST.shake=Math.max(ST.shake,.2);sfx.shot();}}
+function doLance(px,pz,s,mul,dirx,dirz){const d=Math.hypot(dirx,dirz)||1;const bm=take(boltMeshes);if(!bm)return;
+  bm.visible=true;bm.position.set(px,1.2,pz);
+  ST.bolts.push({mesh:bm,x:px,z:pz,vx:dirx/d*s.speed,vz:dirz/d*s.speed,dmg:s.dmg,pierce:99,life:1.3,mul});
+  sfx.shot();}
+// chain lightning: hop from `start` to the nearest un-hit enemy, up to s.jumps targets
+function doChain(start,px,pz,s,mul){let cur=start;const hit=new Set();let fromx=px,fromz=pz,n=0;
+  while(cur&&n<s.jumps){hurtEnemy(cur,s.dmg,undefined,mul);hit.add(cur.id);
+    for(let k=0;k<6;k++){const t=k/5;spawnParts(fromx+(cur.x-fromx)*t,1.2,fromz+(cur.z-fromz)*t,0x9FD8FF,1);}
+    fromx=cur.x;fromz=cur.z;n++;
+    let next=null,bd=s.range*s.range;
+    for(const e of ST.enemies){if(e.dead||hit.has(e.id))continue;const dx=e.x-fromx,dz=e.z-fromz,dd=dx*dx+dz*dz;if(dd<bd){bd=dd;next=e;}}
+    cur=next;}
+  beep(600,.08,'square',.02,-200);}
 const PASSIVES={
   speed:{name:'Fleetfoot',max:5,d:'+8% move speed'},magnet:{name:'Drawing Heat',max:5,d:'+30% pickup radius'},
   vigor:{name:'Stoked Heart',max:5,d:'+20 max health, heal 20'},regen:{name:'Banked Coals',max:5,d:'+0.5 health / sec'},
@@ -1119,7 +1136,7 @@ function newRun(mode,clevel){
     regen:1+.3*fr('mend'),crit:.05,greed:1+.15*fr('greed'),hitFlash:0,bossN:0,outFrac:0,
     mode,clevel,won:false,coop:false,isHost:false,p2:null,down:false,enemyId:1,
     cmod:(mode==='campaign'?campEntry(clevel).mod:null),cname:(mode==='campaign'?campEntry(clevel).name:''),
-    weapons:(()=>{const w={};w[SAVE.startWeapon||'bolt']=1;return w;})(),passives:{},timers:{bolt:0,nova:0,scatter:0,lash:0},
+    weapons:(()=>{const w={};w[START_CHOICES.includes(SAVE.startWeapon)?SAVE.startWeapon:'bolt']=1;return w;})(),passives:{},timers:{bolt:0,nova:0,scatter:0,lash:0,lance:0,chain:0},
     wave:0,wlevel:(mode==='campaign'?clevel:1),waveState:'break',waveTimer:2.2,isBossWave:false,spawnQueue:0,batchCd:0,waveRoster:['grub'],bossE:null,telegraphs:[],
     enemies:[],bolts:[],ebullets:[],orbs:[],coinDrops:[],over:false};
 }
@@ -1339,6 +1356,10 @@ function fire(dt){const T=ST.timers,W=ST.weapons;
     if(T.lash<=0){T.lash=s.cd*ST.cdMul;const tgt=nearestVisible(ST.px,ST.pz,s.range+3);
       let dx=1,dz=0;if(tgt){dx=tgt.x-ST.px;dz=tgt.z-ST.pz;}else{dx=(keys['d']?1:0)-(keys['a']?1:0)||1;dz=(keys['s']?1:0)-(keys['w']?1:0);}
       doLash(ST.px,ST.pz,s,ST.dmgMul,dx,dz);}}
+  if(W.lance){const s=WEAPONS.lance.stat(W.lance);T.lance=(T.lance||0)-dt;
+    if(T.lance<=0){const tgt=nearestVisible(ST.px,ST.pz,200);if(tgt){T.lance=s.cd*ST.cdMul;doLance(ST.px,ST.pz,s,ST.dmgMul,tgt.x-ST.px,tgt.z-ST.pz);}}}
+  if(W.chain){const s=WEAPONS.chain.stat(W.chain);T.chain=(T.chain||0)-dt;
+    if(T.chain<=0){const tgt=nearestVisible(ST.px,ST.pz,s.range+4);if(tgt){T.chain=s.cd*ST.cdMul;doChain(tgt,ST.px,ST.pz,s,ST.dmgMul);}}}
 }
 
 /* ============ input ============ */
@@ -1805,7 +1826,7 @@ function clearScene(){for(const t in enemyPool)for(const g of enemyPool[t]){g.vi
   for(const m of coinMeshes)m.visible=false;for(const m of bladeMeshes)m.visible=false;for(const m of ebulletMeshes)m.visible=false;
   for(const p of parts)p.life=0;for(const d of dnActive)d.el.style.opacity='0';dnActive.length=0;flashEl.style.opacity='0';}
 let lastRun={mode:'free',clevel:1},pendingStart={mode:'free',clevel:1};
-const START_CHOICES=['bolt','nova','orbit'];
+const START_CHOICES=['bolt','lance','chain'];
 // entry point from menus: let the player choose a starting ability first
 function startRun(mode,clevel){pendingStart={mode:mode||'free',clevel:clevel||1};openStartPick();}
 function openStartPick(){const wrap=$('spCards');wrap.innerHTML='';
@@ -1950,7 +1971,13 @@ function fireP2(dt){const p=ST.p2,T=p.timers,W=p.weapons,cd=p.cdMul||1,mul=p.dmg
     if(T.scatter<=0){T.scatter=s.cd*cd;doScatter(p.px,p.pz,s,mul);}}
   if(W.lash){const s=WEAPONS.lash.stat(W.lash);T.lash=(T.lash||0)-dt;
     if(T.lash<=0){T.lash=s.cd*cd;let best=null,bd=(s.range+3)**2;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z,d=dx*dx+dz*dz;if(d<bd){bd=d;best=e;}}
-      doLash(p.px,p.pz,s,mul,best?best.x-p.px:1,best?best.z-p.pz:0);}}}
+      doLash(p.px,p.pz,s,mul,best?best.x-p.px:1,best?best.z-p.pz:0);}}
+  if(W.lance){const s=WEAPONS.lance.stat(W.lance);T.lance=(T.lance||0)-dt;
+    if(T.lance<=0){let best=null,bd=200*200;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z,dd=dx*dx+dz*dz;if(dd<bd){bd=dd;best=e;}}
+      if(best){T.lance=s.cd*cd;doLance(p.px,p.pz,s,mul,best.x-p.px,best.z-p.pz);}}}
+  if(W.chain){const s=WEAPONS.chain.stat(W.chain);T.chain=(T.chain||0)-dt;
+    if(T.chain<=0){let best=null,bd=(s.range+4)**2;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z,dd=dx*dx+dz*dz;if(dd<bd){bd=dd;best=e;}}
+      if(best){T.chain=s.cd*cd;doChain(best,p.px,p.pz,s,mul);}}}}
 function netBroadcast(){if(!NET.active||!ST||!ST.isHost)return;
   const en=[];for(const e of ST.enemies){if(e.dead)continue;en.push([e.id,ENEMY_TYPES.indexOf(e.type),Math.round(e.x*10)/10,Math.round(e.z*10)/10,Math.max(0,Math.min(255,Math.round(255*e.hp/e.maxhp)))]);if(en.length>=60)break;}
   const orbs=[];for(const o of ST.orbs){orbs.push([Math.round(o.x),Math.round(o.z)]);if(orbs.length>=40)break;}
