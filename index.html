@@ -420,6 +420,7 @@
       <button class="qbtn" id="btnAwards"><span class="ic">★</span>Awards</button>
       <button class="qbtn" id="btnSkins"><span class="ic">◆</span>Skins</button>
       <button class="qbtn" id="btnForge"><span class="ic">⚒</span>Forge</button>
+      <button class="qbtn" id="btnFeedback"><span class="ic">✉</span>Feedback</button>
     </div>
     <div class="mcard" id="missionCard"></div>
     <div style="height:20px"></div>
@@ -521,6 +522,23 @@
       <p style="opacity:.6;font-size:13px;margin-bottom:16px">Your best runs are saved to this account and shown on the leaderboard.</p>
       <button class="cta cta2" id="btnAcctLogout">Sign Out</button>
     </div>
+  </div></div>
+  <div class="backbar"><button class="backbtn" data-back>← Home</button></div>
+</div>
+
+<!-- FEEDBACK -->
+<div id="feedback" class="screen hidden">
+  <div class="appbar">
+    <div class="brand"><div class="mk"></div><div class="nm">Feedback</div></div>
+    <div class="wallet"><div class="dot"></div><div class="amt num" id="walletFeedback">0</div></div>
+  </div>
+  <div class="body"><div class="wrap" style="max-width:460px">
+    <div class="shead"><h2>Send <span class="e">feedback</span></h2><span class="h">Bugs · ideas · anything</span></div>
+    <textarea id="fbBody" maxlength="1000" placeholder="What's on your mind? Bugs, ideas, what you'd love to see next…"
+      style="display:block;width:100%;height:150px;resize:vertical;margin-top:6px;background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r-sm);color:inherit;font:inherit;font-size:14px;padding:12px;box-sizing:border-box"></textarea>
+    <div id="fbMsg" style="min-height:20px;margin:8px 2px;font-size:13px"></div>
+    <button class="cta" id="btnFbSend">Send</button>
+    <p style="opacity:.5;font-size:12px;margin-top:14px">Comments go straight to the developer. Be kind! 💛</p>
   </div></div>
   <div class="backbar"><button class="backbtn" data-back>← Home</button></div>
 </div>
@@ -1010,6 +1028,22 @@ const boltMeshes=poolMesh(geoBolt,matBolt,80,false);
 const orbMeshes=poolMesh(geoOrb,matOrb,300,false);
 const coinMeshes=poolMesh(geoCoin,matCoin,70,false);
 const bladeMeshes=poolMesh(geoBlade,matBlade,6,false);
+// Frost Lance — an elongated icy spear (distinct from the round Ember Bolt)
+const geoLance=new THREE.CylinderGeometry(0.06,0.16,2.4,7);geoLance.rotateX(Math.PI/2);
+const matLance=new THREE.MeshStandardMaterial({color:0xCFF3FF,emissive:0x4FC8FF,emissiveIntensity:2.6,roughness:.25,metalness:.2});
+const lanceMeshes=poolMesh(geoLance,matLance,24,false);
+// Ember Scatter — tiny bright sparks (smaller & whiter than a bolt)
+const geoSpark=new THREE.SphereGeometry(0.26,8,8);
+const matSpark=new THREE.MeshStandardMaterial({color:0xFFE9B0,emissive:0xFF8A2E,emissiveIntensity:3,roughness:.3});
+const sparkMeshes=poolMesh(geoSpark,matSpark,60,false);
+// Cinder Lash — a sweeping crescent that flashes then fades
+const lashPool=[];for(let i=0;i<4;i++){const m=new THREE.Mesh(new THREE.RingGeometry(0.6,1,24,1,0,1.6),
+  new THREE.MeshBasicMaterial({color:0xFF8A2E,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false,toneMapped:false}));
+  m.rotation.x=-Math.PI/2;m.position.y=1.0;m.visible=false;scene.add(m);lashPool.push({m,life:0});}
+function lashFx(px,pz,base,arc,range){const f=lashPool.find(o=>o.life<=0)||lashPool[0];const m=f.m;
+  m.geometry.dispose();m.geometry=new THREE.RingGeometry(range*0.55,range,28,1,base-arc/2,arc);
+  m.position.set(px,1.0,pz);m.material.opacity=.6;m.visible=true;f.life=.18;}
+function stepLashFx(dt){for(const o of lashPool){if(o.life>0){o.life-=dt;o.m.material.opacity=Math.max(0,o.life/.18)*.6;if(o.life<=0)o.m.visible=false;}}}
 const take=arr=>{for(const m of arr)if(!m.visible){m.visible=true;return m;}return null;};
 
 /* player — model rebuilt per skin so skins change SHAPE, not just colour */
@@ -1131,23 +1165,28 @@ const WEAPONS={
     stat:l=>({dmg:[12,12,17,17,24][l-1],cd:[1.1,1.0,.92,.82,.72][l-1],jumps:[3,4,4,5,6][l-1],range:[9,9,10,10,11][l-1]})},
 };
 // shared weapon effects so BOTH players (host + partner) can wield them
-function doScatter(px,pz,s,mul){for(let i=0;i<s.count;i++){const a=i/s.count*TAU;const bm=take(boltMeshes);if(!bm)break;
-    bm.visible=true;bm.position.set(px,1.2,pz);ST.bolts.push({mesh:bm,x:px,z:pz,vx:Math.cos(a)*26,vz:Math.sin(a)*26,dmg:s.dmg,pierce:1,life:.95,mul});}
+const rollCrit=cc=>cc!=null?Math.random()<cc:undefined; // per-hit crit for the weapon's owner
+function doScatter(px,pz,s,mul,critC){for(let i=0;i<s.count;i++){const a=i/s.count*TAU;const bm=take(sparkMeshes);if(!bm)break;
+    bm.visible=true;bm.position.set(px,1.2,pz);ST.bolts.push({mesh:bm,x:px,z:pz,vx:Math.cos(a)*26,vz:Math.sin(a)*26,dmg:s.dmg,pierce:1,life:.95,mul,critC,spin:1});}
   sfx.shot();}
-function doLash(px,pz,s,mul,dirx,dirz){const base=Math.atan2(dirz,dirx);let hit=false;
+function doLash(px,pz,s,mul,dirx,dirz,critC){const base=Math.atan2(dirz,dirx);let hit=false;
   for(const e of ST.enemies){if(e.dead)continue;const dx=e.x-px,dz=e.z-pz,d=Math.hypot(dx,dz);if(d>s.range+e.r)continue;
     const ang=Math.atan2(dz,dx),da=Math.abs(((ang-base+Math.PI*3)%TAU)-Math.PI);
-    if(da<=s.arc/2){hurtEnemy(e,s.dmg,undefined,mul);hit=true;}}
-  for(let k=0;k<11;k++){const a=base+(k/10-.5)*s.arc;spawnParts(px+Math.cos(a)*s.range*.6,1.1,pz+Math.sin(a)*s.range*.6,0xFFB13D,1);}
+    if(da<=s.arc/2){hurtEnemy(e,s.dmg,rollCrit(critC),mul);hit=true;}}
+  lashFx(px,pz,base,s.arc,s.range); // sweeping crescent, not just sparks
   if(hit){ST.shake=Math.max(ST.shake,.2);sfx.shot();}}
-function doLance(px,pz,s,mul,dirx,dirz){const d=Math.hypot(dirx,dirz)||1;const bm=take(boltMeshes);if(!bm)return;
-  bm.visible=true;bm.position.set(px,1.2,pz);
-  ST.bolts.push({mesh:bm,x:px,z:pz,vx:dirx/d*s.speed,vz:dirz/d*s.speed,dmg:s.dmg,pierce:99,life:1.3,mul});
-  sfx.shot();}
+function doLance(px,pz,s,mul,dirx,dirz,critC){const d=Math.hypot(dirx,dirz)||1;const bm=take(lanceMeshes);if(!bm)return;
+  const ang=Math.atan2(dirx/d,dirz/d);bm.visible=true;bm.position.set(px,1.2,pz);bm.rotation.set(0,ang,0);
+  ST.bolts.push({mesh:bm,x:px,z:pz,vx:dirx/d*s.speed,vz:dirz/d*s.speed,dmg:s.dmg,pierce:99,life:1.3,mul,critC,face:ang});
+  spawnParts(px,1.2,pz,0x8FE9FF,4);sfx.shot();}
 // chain lightning: hop from `start` to the nearest un-hit enemy, up to s.jumps targets
-function doChain(start,px,pz,s,mul){let cur=start;const hit=new Set();let fromx=px,fromz=pz,n=0;
-  while(cur&&n<s.jumps){hurtEnemy(cur,s.dmg,undefined,mul);hit.add(cur.id);
-    for(let k=0;k<6;k++){const t=k/5;spawnParts(fromx+(cur.x-fromx)*t,1.2,fromz+(cur.z-fromz)*t,0x9FD8FF,1);}
+function doChain(start,px,pz,s,mul,critC){let cur=start;const hit=new Set();let fromx=px,fromz=pz,n=0;
+  while(cur&&n<s.jumps){hurtEnemy(cur,s.dmg,rollCrit(critC),mul);hit.add(cur.id);
+    // jagged bolt: zig-zag the segment with a sideways jitter so it reads as lightning
+    const seg=8,perpx=-(cur.z-fromz),perpz=(cur.x-fromx),pl=Math.hypot(perpx,perpz)||1;
+    for(let k=0;k<=seg;k++){const t=k/seg,j=(k>0&&k<seg)?(Math.random()-.5)*1.6:0;
+      spawnParts(fromx+(cur.x-fromx)*t+perpx/pl*j,1.25,fromz+(cur.z-fromz)*t+perpz/pl*j,k%2?0xDFF3FF:0x6FC0FF,1);}
+    spawnParts(cur.x,1.2,cur.z,0x9FD8FF,3);
     fromx=cur.x;fromz=cur.z;n++;
     let next=null,bd=s.range*s.range;
     for(const e of ST.enemies){if(e.dead||hit.has(e.id))continue;const dx=e.x-fromx,dz=e.z-fromz,dd=dx*dx+dz*dz;if(dd<bd){bd=dd;next=e;}}
@@ -1383,15 +1422,15 @@ function fire(dt){const T=ST.timers,W=ST.weapons;
     if(T.nova<=0){T.nova=s.cd*ST.cdMul;sfx.nova();novaFx={t:.4,max:.4,r:s.radius};ST.shake=Math.max(ST.shake,.35);
       for(const e of ST.enemies){const dx=ST.px-e.x,dz=ST.pz-e.z;if(dx*dx+dz*dz<(s.radius+e.r)**2)hurtEnemy(e,s.dmg);}}}
   if(W.scatter){const s=WEAPONS.scatter.stat(W.scatter);T.scatter=(T.scatter||0)-dt;
-    if(T.scatter<=0){T.scatter=s.cd*ST.cdMul;doScatter(ST.px,ST.pz,s,ST.dmgMul);}}
+    if(T.scatter<=0){T.scatter=s.cd*ST.cdMul;doScatter(ST.px,ST.pz,s,ST.dmgMul,ST.crit);}}
   if(W.lash){const s=WEAPONS.lash.stat(W.lash);T.lash=(T.lash||0)-dt;
     if(T.lash<=0){T.lash=s.cd*ST.cdMul;const tgt=nearestVisible(ST.px,ST.pz,s.range+3);
       let dx=1,dz=0;if(tgt){dx=tgt.x-ST.px;dz=tgt.z-ST.pz;}else{dx=(keys['d']?1:0)-(keys['a']?1:0)||1;dz=(keys['s']?1:0)-(keys['w']?1:0);}
-      doLash(ST.px,ST.pz,s,ST.dmgMul,dx,dz);}}
+      doLash(ST.px,ST.pz,s,ST.dmgMul,dx,dz,ST.crit);}}
   if(W.lance){const s=WEAPONS.lance.stat(W.lance);T.lance=(T.lance||0)-dt;
-    if(T.lance<=0){const tgt=nearestVisible(ST.px,ST.pz,200);if(tgt){T.lance=s.cd*ST.cdMul;doLance(ST.px,ST.pz,s,ST.dmgMul,tgt.x-ST.px,tgt.z-ST.pz);}}}
+    if(T.lance<=0){const tgt=nearestVisible(ST.px,ST.pz,200);if(tgt){T.lance=s.cd*ST.cdMul;doLance(ST.px,ST.pz,s,ST.dmgMul,tgt.x-ST.px,tgt.z-ST.pz,ST.crit);}}}
   if(W.chain){const s=WEAPONS.chain.stat(W.chain);T.chain=(T.chain||0)-dt;
-    if(T.chain<=0){const tgt=nearestVisible(ST.px,ST.pz,s.range+4);if(tgt){T.chain=s.cd*ST.cdMul;doChain(tgt,ST.px,ST.pz,s,ST.dmgMul);}}}
+    if(T.chain<=0){const tgt=nearestVisible(ST.px,ST.pz,s.range+4);if(tgt){T.chain=s.cd*ST.cdMul;doChain(tgt,ST.px,ST.pz,s,ST.dmgMul,ST.crit);}}}
 }
 
 /* ============ input ============ */
@@ -1488,9 +1527,10 @@ function update(dt){
       e.leapCd=(e.leapCd==null?rand(1,2):e.leapCd)-dt;
       if(e.dashT>0){e.dashT-=dt;e.x+=e.ddx*22*dt;e.z+=e.ddz*22*dt;}
       else{e.x+=nx*e.spd*.45*dt;e.z+=nz*e.spd*.45*dt;if(e.leapCd<=0&&d<28){e.dashT=.34;e.ddx=nx;e.ddz=nz;e.leapCd=rand(1.3,2.1);}}
-    }else if(beh==='blink'){ // Assassin — blinks in on you
+    }else if(beh==='blink'){ // Assassin — blinks in on you, but can't strike the instant it lands
       e.blinkCd=(e.blinkCd==null?rand(1.5,3):e.blinkCd)-dt;
-      if(e.blinkCd<=0&&d>9){spawnParts(e.x,1,e.z,0x9D5CFF,12);e.x=targX+rand(-4,4);e.z=targZ+rand(-4,4);spawnParts(e.x,1,e.z,0x9D5CFF,12);e.blinkCd=rand(2,3.4);}
+      if(e.blinkCd<=0&&d>9){spawnParts(e.x,1,e.z,0x9D5CFF,12);e.x=targX+rand(-4,4);e.z=targZ+rand(-4,4);spawnParts(e.x,1,e.z,0x9D5CFF,12);
+        e.blinkCd=rand(2,3.4);e.hitCd=Math.max(e.hitCd,0.7);} // recovery window: telegraphs the hit so you can dodge
       else{e.x+=nx*e.spd*dt;e.z+=nz*e.spd*dt;}
     }else{
       e.x+=nx*e.spd*dt+Math.cos(e.ph)*.4*dt;e.z+=nz*e.spd*dt+Math.sin(e.ph)*.4*dt;
@@ -1539,7 +1579,7 @@ function update(dt){
 
   for(const b of ST.bolts){b.life-=dt;b.x+=b.vx*dt;b.z+=b.vz*dt;b.mesh.position.set(b.x,1.2,b.z);
     for(const e of ST.enemies){if(e.dead)continue;const dx=b.x-e.x,dz=b.z-e.z;if(dx*dx+dz*dz<(.5+e.r)**2){
-      hurtEnemy(e,b.dmg,undefined,b.mul);spawnParts(b.x,1.2,b.z,0xFFB13D,3);if(b.pierce>0)b.pierce--;else{b.life=0;}break;}}}
+      hurtEnemy(e,b.dmg,rollCrit(b.critC),b.mul);spawnParts(b.x,1.2,b.z,0xFFB13D,3);if(b.pierce>0)b.pierce--;else{b.life=0;}break;}}}
   ST.bolts=ST.bolts.filter(b=>{if(b.life>0)return true;b.mesh.visible=false;return false;});
 
   const mag2=ST.magnet*ST.magnet;
@@ -1567,9 +1607,9 @@ function update(dt){
     novaRing.scale.set(r,r,r);novaRing.position.set(ST.px,.4,ST.pz);novaRing.material.opacity=(1-p)*.8;}
   else novaRing.material.opacity=0;
 
-  stepParticles(dt);
+  stepParticles(dt);stepLashFx(dt);
 
-  const cx=(ST.coop&&ST.p2)?(ST.px+ST.p2.px)/2:ST.px, cz=(ST.coop&&ST.p2)?(ST.pz+ST.p2.pz)/2:ST.pz;
+  const cx=ST.px, cz=ST.pz; // each player's camera follows their own character (not a joint midpoint)
   tmpV.set(cx,0,cz).add(CAM_OFF);
   if(ST.shake>0){tmpV.x+=rand(-1,1)*ST.shake;tmpV.z+=rand(-1,1)*ST.shake;ST.shake=Math.max(0,ST.shake-dt*1.6);}
   camera.position.lerp(tmpV,Math.min(1,8*dt));camera.lookAt(cx,1,cz);
@@ -1600,9 +1640,10 @@ function gainXp(v,who){
   if(ST.pendingLU>0&&state==='run'){ST.pendingLU--;openLevelUp();}}
 
 /* ============ level up ============ */
+const MAX_WEAPONS=3; // you can carry at most this many distinct weapons
 function buildPoolFrom(weapons,passives,excludeW){const pool=[];const nw=Object.keys(weapons).length;
   for(const id in WEAPONS){if(excludeW&&excludeW.includes(id))continue;const lv=weapons[id]|0;
-    if(lv>0&&lv<WEAPONS[id].max)pool.push({kind:'w',id});else if(lv===0&&nw<4)pool.push({kind:'w',id,fresh:true});}
+    if(lv>0&&lv<WEAPONS[id].max)pool.push({kind:'w',id});else if(lv===0&&nw<MAX_WEAPONS)pool.push({kind:'w',id,fresh:true});}
   for(const id in PASSIVES)if((passives[id]|0)<PASSIVES[id].max)pool.push({kind:'p',id});
   return pool;}
 function buildPool(){return buildPoolFrom(ST.weapons,ST.passives);}
@@ -1629,7 +1670,8 @@ function openLevelUp(){const picks=pickThree(buildPool());$('luEyebrow').innerHT
     if(ST.pendingLU>0){ST.pendingLU--;openLevelUp();}else setState('run');});
   sfx.lvl();setState('levelup');}
 /* ---- co-op level ups: pause both, the leveling player picks on their own screen ---- */
-const coopLU={open:false,who:0,picks:null};
+const coopLU={open:false,who:0,picks:null,timer:0};
+function clearCoopTimer(){if(coopLU.timer){clearTimeout(coopLU.timer);coopLU.timer=0;}}
 function applyPassivesP2(){const p=ST.p2.passives,P=ST.p2;
   P.speed=17*(1+.08*(p.speed|0));P.dmgMul=(1+.10*(p.might|0));P.cdMul=Math.pow(.92,p.haste|0);
   P.magnet=6*(1+.30*(p.magnet|0));P.regen=1+.5*(p.regen|0);P.crit=.05+.06*(p.crit|0);}
@@ -1643,8 +1685,10 @@ function tryCoopLU(){if(!ST.coop||!ST.isHost||coopLU.open)return;
   if(ST.p2&&(ST.p2.pendingLU||0)>0){ST.p2.pendingLU--;coopLU.open=true;coopLU.who=2;ST.luLock=true;
     const picks=pickThree(buildPoolFrom(ST.p2.weapons,ST.p2.passives,['orbit']));coopLU.picks=picks;
     netSend({t:'offer',picks:picks.map(p=>({kind:p.kind,id:p.id})),w:ST.p2.weapons,p:ST.p2.passives,lvl:ST.p2.level});
+    // don't freeze the host forever if the partner is AFK — auto-pick after a grace period
+    clearCoopTimer();coopLU.timer=setTimeout(()=>hostApplyGuestPick(0),20000);
     $('coopwait').classList.remove('hidden');sfx.lvl();return;}}
-function hostApplyGuestPick(i){if(coopLU.who!==2||!coopLU.picks)return;const pk=coopLU.picks[i]||coopLU.picks[0];
+function hostApplyGuestPick(i){if(coopLU.who!==2||!coopLU.picks)return;clearCoopTimer();const pk=coopLU.picks[i]||coopLU.picks[0];
   applyPickTo(pk,ST.p2,applyPassivesP2);$('coopwait').classList.add('hidden');coopLU.open=false;ST.luLock=false;netSend({t:'resume'});tryCoopLU();}
 function buildChips(){const el=$('chips');el.innerHTML='';
   for(const id in ST.weapons){const s=document.createElement('span');s.className='chip';s.innerHTML=WEAPONS[id].name+' <b>'+ST.weapons[id]+'</b>';el.appendChild(s);}}
@@ -1686,7 +1730,7 @@ function showBossBar(b){const el=$('bossbar');el.classList.remove('hidden');
 function hideBossBar(){$('bossbar').classList.add('hidden');}
 
 /* ============ screens ============ */
-const SCREENS=['home','skins','forge','awards','profile','ranks','levels','duos','account'];
+const SCREENS=['home','skins','forge','awards','profile','ranks','levels','duos','account','feedback'];
 function setState(s){state=s;
   $('hud').style.display=(s==='run'||s==='levelup'||s==='pause')?'block':'none';
   for(const id of SCREENS)$(id).classList.toggle('hidden',s!==id);
@@ -1697,10 +1741,10 @@ function setState(s){state=s;
     for(const id in ST.passives)parts.push(PASSIVES[id].name+' '+ST.passives[id]);$('pauseBuild').textContent=parts.join(' · ');}
   if(s!=='run'){player2.visible=false;pmark.visible=false;p2mark.visible=false;}
   if(s==='home'){clearScene();renderHome();}if(s==='skins')renderSkins();if(s==='forge')renderForge();if(s==='awards')renderAwards();
-  if(s==='profile')renderProfile();if(s==='ranks')renderLeaderboard();if(s==='levels')renderLevels();if(s==='account')renderAccount();
+  if(s==='profile')renderProfile();if(s==='ranks')renderLeaderboard();if(s==='levels')renderLevels();if(s==='account')renderAccount();if(s==='feedback')$('fbMsg').textContent='';
   syncWallets();
 }
-function syncWallets(){const v=Math.floor(SAVE.coins);['walletHome','walletSkins','walletForge','walletAwards','walletProfile','walletRanks','walletLevels','walletDuos','walletAccount'].forEach(id=>{const el=$(id);if(el)el.textContent=v;});}
+function syncWallets(){const v=Math.floor(SAVE.coins);['walletHome','walletSkins','walletForge','walletAwards','walletProfile','walletRanks','walletLevels','walletDuos','walletAccount','walletFeedback'].forEach(id=>{const el=$(id);if(el)el.textContent=v;});}
 /* Duos buttons */
 $('btnDuos').onclick=()=>{netReset();$('duoPick').classList.remove('hidden');$('duoLobby').classList.add('hidden');$('duoJoin').classList.add('hidden');$('duoMsg').textContent='';setState('duos');};
 $('btnHostRoom').onclick=()=>{$('duoMsg').textContent='Connecting…';netConnect(()=>netSend({t:'create'}));};
@@ -1789,7 +1833,8 @@ async function doLogout(){const t=SAVE.account&&SAVE.account.token;SAVE.account=
 async function verifyAccount(){if(!(SAVE.account&&SAVE.account.token)){acctBarText();return;}
   try{const r=await fetch('/api/me',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:SAVE.account.token})});
     const j=await r.json().catch(()=>({}));
-    if(!(j&&j.user)){SAVE.account=null;persist();}else{SAVE.account.username=j.user.username;persist();}
+    if(!(j&&j.user)){SAVE.account=null;persist();}
+    else if(SAVE.account.username!==j.user.username){SAVE.account.username=j.user.username;persist();}
   }catch(e){}
   acctBarText();}
 function renderBoard(board,global,myBest){
@@ -1893,6 +1938,7 @@ $('btnClaim').onclick=()=>{const b=$('btnClaim');
 /* ============ run lifecycle ============ */
 function clearScene(){for(const t in enemyPool)for(const g of enemyPool[t]){g.visible=false;if(g.userData.hpbar)g.userData.hpbar.visible=false;}
   for(const m of boltMeshes)m.visible=false;for(const m of orbMeshes)m.visible=false;
+  for(const m of lanceMeshes)m.visible=false;for(const m of sparkMeshes)m.visible=false;for(const o of lashPool){o.m.visible=false;o.life=0;}
   for(const m of coinMeshes)m.visible=false;for(const m of bladeMeshes)m.visible=false;for(const m of ebulletMeshes)m.visible=false;
   for(const p of parts)p.life=0;for(const d of dnActive)d.el.style.opacity='0';dnActive.length=0;flashEl.style.opacity='0';}
 let lastRun={mode:'free',clevel:1},pendingStart={mode:'free',clevel:1};
@@ -1916,7 +1962,7 @@ function winCampaign(){if(ST.over)return;ST.won=true;
   if(SAVE.campaign.unlocked<ST.clevel+1){SAVE.campaign.unlocked=ST.clevel+1;persist();}
   bannerMsg(ST.cname||('LEVEL '+ST.clevel),'COMPLETE');endRun();}
 function endRun(){if(ST.over)return;ST.over=true;
-  ST.luLock=false;coopLU.open=false;$('levelup').classList.add('hidden');$('coopwait').classList.add('hidden');
+  ST.luLock=false;coopLU.open=false;clearCoopTimer();$('levelup').classList.add('hidden');$('coopwait').classList.add('hidden');
   if(ST.coop&&ST.isHost){netBroadcast();player2.visible=false;}
   const earned=Math.floor((ST.coins+Math.floor(ST.t/20)+ST.level*2)*ST.greed);SAVE.coins+=earned;
   let best=false;if(ST.t>SAVE.bestTime){SAVE.bestTime=ST.t;best=true;}if(ST.kills>SAVE.bestKills){SAVE.bestKills=ST.kills;best=true;}
@@ -1963,6 +2009,18 @@ $('btnAcctToggle').onclick=()=>{acctMode=acctMode==='register'?'login':'register
 $('btnAcctSubmit').onclick=()=>doAuth();
 $('btnAcctLogout').onclick=()=>doLogout();
 $('acctPass').addEventListener('keydown',e=>{if(e.key==='Enter')doAuth();});
+$('btnFeedback').onclick=()=>setState('feedback');
+$('btnFbSend').onclick=()=>sendFeedback();
+async function sendFeedback(){const body=($('fbBody').value||'').trim();const msg=$('fbMsg');
+  if(body.length<2){msg.style.color='var(--rose,#FF6B7F)';msg.textContent='Please write a little more first.';return;}
+  $('btnFbSend').disabled=true;msg.style.color='var(--muted)';msg.textContent='Sending…';
+  const payload={body};if(SAVE.account&&SAVE.account.token)payload.sessionToken=SAVE.account.token;else payload.name=SAVE.profile.name;
+  try{const r=await fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok){$('fbBody').value='';msg.style.color='var(--teal)';msg.textContent='Thanks! Your feedback was sent. 💛';sfx&&sfx.buy&&sfx.buy();}
+    else{msg.style.color='var(--rose,#FF6B7F)';msg.textContent=j.message||'Could not send. Try again.';}
+  }catch(e){msg.style.color='var(--rose,#FF6B7F)';msg.textContent='Network error. Try again.';}
+  $('btnFbSend').disabled=false;}
 $('btnReroll').onclick=()=>{editAv=randAvatar();sfx.buy();renderProfile();};
 $('btnProfileSave').onclick=()=>{const nm=($('nameInput').value||'').trim().slice(0,16)||'Player';
   SAVE.profile={name:nm,av:editAv||SAVE.profile.av};editAv=null;persist();sfx.buy();setState('home');};
@@ -2010,7 +2068,7 @@ function netMsg(m){
   else if(m.t==='resume'){coopLU.open=false;$('levelup').classList.add('hidden');$('coopwait').classList.add('hidden');}
   else if(m.t==='pick'){hostApplyGuestPick(m.i|0);} // host: apply guest's chosen upgrade
 }
-function peerLeft(msg){ coopLU.open=false;if(ST)ST.luLock=false;$('coopwait').classList.add('hidden');$('levelup').classList.add('hidden');
+function peerLeft(msg){ coopLU.open=false;clearCoopTimer();if(ST)ST.luLock=false;$('coopwait').classList.add('hidden');$('levelup').classList.add('hidden');
   if(NET.active){toast('Duo ended',msg,'teal'); if(NET.role==='host'&&ST&&!ST.over){ST.coop=false;player2.visible=false;} else if(NET.role==='guest'){ if(state==='run')setState('home'); } NET.active=false; }
   if(state==='duos'){NET.peerHere=false;showLobby();$('lobbyStatus').textContent=msg;} }
 function showLobby(){$('duoPick').classList.add('hidden');$('duoLobby').classList.remove('hidden');$('roomCode').textContent=NET.code||'----';
@@ -2042,17 +2100,18 @@ function fireP2(dt){const p=ST.p2,T=p.timers,W=p.weapons,cd=p.cdMul||1,mul=p.dmg
           ST.bolts.push({mesh:bm,x:p.px,z:p.pz,vx:Math.cos(a)*34,vz:Math.sin(a)*34,dmg:s.dmg,pierce:s.pierce,life:1.6,mul});}}}}
   if(W.nova){const s=WEAPONS.nova.stat(W.nova);T.nova=(T.nova||0)-dt;
     if(T.nova<=0){T.nova=s.cd*cd;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z;if(dx*dx+dz*dz<(s.radius+e.r)**2)hurtEnemy(e,s.dmg,undefined,mul);}}}
+  const crit=p.crit||.05;
   if(W.scatter){const s=WEAPONS.scatter.stat(W.scatter);T.scatter=(T.scatter||0)-dt;
-    if(T.scatter<=0){T.scatter=s.cd*cd;doScatter(p.px,p.pz,s,mul);}}
+    if(T.scatter<=0){T.scatter=s.cd*cd;doScatter(p.px,p.pz,s,mul,crit);}}
   if(W.lash){const s=WEAPONS.lash.stat(W.lash);T.lash=(T.lash||0)-dt;
     if(T.lash<=0){T.lash=s.cd*cd;let best=null,bd=(s.range+3)**2;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z,d=dx*dx+dz*dz;if(d<bd){bd=d;best=e;}}
-      doLash(p.px,p.pz,s,mul,best?best.x-p.px:1,best?best.z-p.pz:0);}}
+      doLash(p.px,p.pz,s,mul,best?best.x-p.px:1,best?best.z-p.pz:0,crit);}}
   if(W.lance){const s=WEAPONS.lance.stat(W.lance);T.lance=(T.lance||0)-dt;
     if(T.lance<=0){let best=null,bd=200*200;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z,dd=dx*dx+dz*dz;if(dd<bd){bd=dd;best=e;}}
-      if(best){T.lance=s.cd*cd;doLance(p.px,p.pz,s,mul,best.x-p.px,best.z-p.pz);}}}
+      if(best){T.lance=s.cd*cd;doLance(p.px,p.pz,s,mul,best.x-p.px,best.z-p.pz,crit);}}}
   if(W.chain){const s=WEAPONS.chain.stat(W.chain);T.chain=(T.chain||0)-dt;
     if(T.chain<=0){let best=null,bd=(s.range+4)**2;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z,dd=dx*dx+dz*dz;if(dd<bd){bd=dd;best=e;}}
-      if(best){T.chain=s.cd*cd;doChain(best,p.px,p.pz,s,mul);}}}}
+      if(best){T.chain=s.cd*cd;doChain(best,p.px,p.pz,s,mul,crit);}}}}
 function netBroadcast(){if(!NET.active||!ST||!ST.isHost)return;
   const en=[];for(const e of ST.enemies){if(e.dead)continue;en.push([e.id,ENEMY_TYPES.indexOf(e.type),Math.round(e.x*10)/10,Math.round(e.z*10)/10,Math.max(0,Math.min(255,Math.round(255*e.hp/e.maxhp)))]);if(en.length>=60)break;}
   const orbs=[];for(const o of ST.orbs){orbs.push([Math.round(o.x),Math.round(o.z)]);if(orbs.length>=40)break;}
@@ -2084,8 +2143,8 @@ function guestFrame(dt){const st=NET.state;
     p2core.rotation.y+=dt;p2light.position.set(GUEST.px,2.6,GUEST.pz);
     pcore.rotation.y+=dt;emberLight.position.set(st.p1[0],2.6,st.p1[1]);
     guestSyncEnemies(st.en,dt);guestSyncOrbs(st.orbs||[]);guestSyncTele(st.tg||[]);guestSyncBolts(st.bo||[]);guestSyncEbullets(st.eb||[]);guestHud(st);
-    _gmid.set((st.p1[0]+GUEST.px)/2,0,(st.p1[1]+GUEST.pz)/2).add(CAM_OFF);
-    camera.position.lerp(_gmid,Math.min(1,6*dt));camera.lookAt((st.p1[0]+GUEST.px)/2,1,(st.p1[1]+GUEST.pz)/2);
+    _gmid.set(GUEST.px,0,GUEST.pz).add(CAM_OFF); // guest camera follows the guest's own character
+    camera.position.lerp(_gmid,Math.min(1,6*dt));camera.lookAt(GUEST.px,1,GUEST.pz);
     if(st.over&&!GUEST.overShown){GUEST.overShown=true;
       $('goEyebrow').textContent='Duo run';$('goTitle').innerHTML='The swarm <span class="e">wins this time</span>';
       $('goStats').innerHTML='<div class="c"><div class="k">Wave</div><div class="v num">'+st.w+'</div></div><div class="c"><div class="k">Level</div><div class="v num">'+st.l+'</div></div>';

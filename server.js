@@ -55,12 +55,24 @@ if (DB_URL) {
         created_at TIMESTAMPTZ DEFAULT now(),
         expires_at TIMESTAMPTZ NOT NULL
       )`
+    )).then(() => pool.query(
+      `CREATE TABLE IF NOT EXISTS feedback(
+        id SERIAL PRIMARY KEY,
+        user_id INT REFERENCES users(id) ON DELETE SET NULL,
+        name TEXT, body TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT now()
+      )`
     )).then(() => {
       console.log('DB ready');
       // one-off cleanup of setup test rows (fake tokens; never returned by real clients)
       pool.query("DELETE FROM scores WHERE token IN ('testtoken1','tok2')").catch(() => {});
-      // sweep expired sessions periodically
-      pool.query('DELETE FROM sessions WHERE expires_at < now()').catch(() => {});
+      // migrate legacy raw device score keys into the 'd' namespace (skip account rows 'u<id>',
+      // rows already migrated, and any that would collide with an existing 'd' row)
+      pool.query("UPDATE scores SET token='d'||token WHERE token !~ '^u[0-9]+$' AND token NOT LIKE 'd%' AND ('d'||token) NOT IN (SELECT token FROM scores)").catch(() => {});
+      // sweep expired sessions now and hourly (the table would otherwise grow unbounded)
+      const sweepSessions = () => pool.query('DELETE FROM sessions WHERE expires_at < now()').catch(() => {});
+      sweepSessions();
+      setInterval(sweepSessions, 3600000).unref();
     }).catch(e => console.error('DB init error', e.message));
   } catch (e) { console.error('pg load error', e.message); }
 }
@@ -73,6 +85,9 @@ const clampInt = (v, lo, hi) => { v = Math.floor(Number(v) || 0); return Math.ma
 
 /* ---------- accounts: password hashing + sessions ---------- */
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
+// a well-formed hash to verify against when a username doesn't exist, so login
+// timing is the same whether or not the account is real (no user enumeration)
+const DUMMY_HASH = 'scrypt$' + '00'.repeat(16) + '$' + '00'.repeat(64);
 // store as scrypt$<saltHex>$<hashHex>
 async function hashPassword(pw) {
   const salt = crypto.randomBytes(16);
@@ -115,24 +130,27 @@ async function userForToken(token) {
 const validUsername = (u) => typeof u === 'string' && /^[A-Za-z0-9_]{3,16}$/.test(u);
 const validPassword = (p) => typeof p === 'string' && p.length >= 8 && p.length <= 200;
 
-/* ---------- simple in-memory rate limiter (per IP, per bucket) ---------- */
+/* ---------- simple in-memory rate limiter (per IP) ---------- */
 const rlBuckets = new Map(); // key -> [timestamps]
-function rateLimited(key, max, windowMs) {
+// how many hits for `key` are still inside the window (does NOT record a new hit)
+function rlCount(key, windowMs) {
   const now = Date.now();
   let arr = rlBuckets.get(key);
   if (!arr) { arr = []; rlBuckets.set(key, arr); }
   while (arr.length && now - arr[0] > windowMs) arr.shift();
-  if (arr.length >= max) return true;
-  arr.push(now);
-  return false;
+  return arr.length;
 }
+// record one hit for `key` (called only on failures / abuse-prone successes)
+function rlAdd(key) { const arr = rlBuckets.get(key) || []; arr.push(Date.now()); rlBuckets.set(key, arr); }
 setInterval(() => { // stop the map from growing unbounded
   const now = Date.now();
   for (const [k, arr] of rlBuckets) { while (arr.length && now - arr[0] > 3600000) arr.shift(); if (!arr.length) rlBuckets.delete(k); }
 }, 600000).unref();
+// Behind a proxy, a client's own X-Forwarded-For values are prepended; the RIGHTMOST
+// entry is the one the trusted proxy appended, so use that (never [0], which is spoofable).
 function clientIp(req) {
   const xf = req.headers['x-forwarded-for'];
-  if (xf) return String(xf).split(',')[0].trim();
+  if (xf) { const parts = String(xf).split(',').map(s => s.trim()).filter(Boolean); if (parts.length) return parts[parts.length - 1]; }
   return (req.socket && req.socket.remoteAddress) || 'unknown';
 }
 // read a small JSON body (auth payloads are tiny); calls cb(err, obj)
@@ -193,8 +211,10 @@ function handleApi(req, res, urlPath) {
   // ---- accounts ----
   if (req.method === 'POST' && (urlPath === '/api/register' || urlPath === '/api/login')) {
     const ip = clientIp(req);
-    // brute-force protection: cap auth attempts per IP
-    if (rateLimited('auth:' + ip, 12, 5 * 60 * 1000)) return sendJSON(res, 429, { error: 'too_many_attempts' });
+    // Cap only repeated FAILURES (wrong password) / abusive signups, so many legit
+    // users behind one shared IP (a school NAT) don't lock each other out.
+    if (urlPath === '/api/login' && rlCount('login:' + ip, 10 * 60 * 1000) >= 20) return sendJSON(res, 429, { error: 'too_many_attempts', message: 'Too many attempts. Try again in a few minutes.' });
+    if (urlPath === '/api/register' && rlCount('reg:' + ip, 60 * 60 * 1000) >= 30) return sendJSON(res, 429, { error: 'too_many_attempts', message: 'Too many new accounts from here. Try again later.' });
     readJson(req, res, 1000, async (err, d) => {
       if (err) return sendJSON(res, err === 'too_large' ? 413 : 400, { error: err });
       const username = typeof d.username === 'string' ? d.username.trim() : '';
@@ -204,19 +224,25 @@ function handleApi(req, res, urlPath) {
       const lower = username.toLowerCase();
       try {
         if (urlPath === '/api/register') {
+          // cheap availability check first so a taken name doesn't cost a scrypt hash
+          const exists = await pool.query('SELECT 1 FROM users WHERE username_lower=$1', [lower]);
+          if (exists.rows[0]) return sendJSON(res, 409, { error: 'username_taken', message: 'That name is taken.' });
           const ph = await hashPassword(password);
           const r = await pool.query(
             'INSERT INTO users(username,username_lower,pass_hash) VALUES($1,$2,$3) ON CONFLICT(username_lower) DO NOTHING RETURNING id',
             [username, lower, ph]
           );
           if (!r.rows[0]) return sendJSON(res, 409, { error: 'username_taken', message: 'That name is taken.' });
+          rlAdd('reg:' + ip);
           const token = await createSession(r.rows[0].id);
           return sendJSON(res, 200, { ok: true, token, username });
         } else { // login
           const r = await pool.query('SELECT id, username, pass_hash FROM users WHERE username_lower=$1', [lower]);
           const row = r.rows[0];
-          const ok = row ? await verifyPassword(password, row.pass_hash) : false;
-          if (!ok) return sendJSON(res, 401, { error: 'invalid_credentials', message: 'Wrong name or password.' });
+          // always run one scrypt (a dummy when the user is unknown) so response time
+          // doesn't reveal whether the username exists
+          const ok = row ? await verifyPassword(password, row.pass_hash) : (await verifyPassword(password, DUMMY_HASH), false);
+          if (!ok) { rlAdd('login:' + ip); return sendJSON(res, 401, { error: 'invalid_credentials', message: 'Wrong name or password.' }); }
           const token = await createSession(row.id);
           return sendJSON(res, 200, { ok: true, token, username: row.username });
         }
@@ -241,6 +267,26 @@ function handleApi(req, res, urlPath) {
       try {
         const acct = await userForToken(String((d && d.token) || ''));
         return sendJSON(res, 200, { user: acct ? { username: acct.username } : null });
+      } catch (e) { return sendJSON(res, 500, { error: 'server_error' }); }
+    });
+    return;
+  }
+
+  // ---- feedback (write-only from players) ----
+  if (req.method === 'POST' && urlPath === '/api/feedback') {
+    const ip = clientIp(req);
+    if (rlCount('fb:' + ip, 10 * 60 * 1000) >= 6) return sendJSON(res, 429, { error: 'too_many', message: "Thanks — you've sent a lot! Try again later." });
+    readJson(req, res, 3000, async (err, d) => {
+      if (err) return sendJSON(res, err === 'too_large' ? 413 : 400, { error: err });
+      const body = typeof d.body === 'string' ? d.body.trim() : '';
+      if (body.length < 2 || body.length > 1000) return sendJSON(res, 400, { error: 'bad_body', message: 'Feedback must be 2-1000 characters.' });
+      let userId = null, name = 'Anonymous';
+      try { const acct = d.sessionToken ? await userForToken(String(d.sessionToken)) : null; if (acct) { userId = acct.id; name = acct.username; } } catch (e) {}
+      if (!userId) { const n = typeof d.name === 'string' ? d.name.trim().slice(0, 24) : ''; if (n) name = n; }
+      try {
+        await pool.query('INSERT INTO feedback(user_id,name,body) VALUES($1,$2,$3)', [userId, name.slice(0, 24), body]);
+        rlAdd('fb:' + ip);
+        return sendJSON(res, 200, { ok: true });
       } catch (e) { return sendJSON(res, 500, { error: 'server_error' }); }
     });
     return;
