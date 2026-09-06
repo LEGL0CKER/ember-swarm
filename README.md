@@ -49,6 +49,7 @@ build and can wield every weapon.
 npm test                          # server: accounts, rate limits, score checks, crash vectors, relay (in-memory pg stub)
 npm run test:e2e                  # headless WebGL run-through of every biome, mob, boss, weapon, campaign, Duos
 npm run test:e2e:mobile           # the same at 375×812 with touch (MAXE=46 path)
+node test/prod-probe.mjs [url]    # read-only probe of a deployment: boot health + a live two-tab Duos session
 ```
 
 The end-to-end suite needs Playwright's Chromium: `npm i -D playwright` or point
