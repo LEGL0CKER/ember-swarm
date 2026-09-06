@@ -180,6 +180,15 @@ try {
   await page.waitForTimeout(1200);
   const d3 = await page2.evaluate(() => { const N = window.__NET(); return { bl: N.state.bl.length, mn: N.state.mn.length, bm: N.state.bm.length }; });
   check(d3.bl >= 2 && d3.bm >= 1, `partner's Cinder Ring/Kiln Beam/mines visible to guest (blades ${d3.bl}, beams ${d3.bm}, mines ${d3.mn})`);
+  const gv = await page2.evaluate(() => { const vis = p => p.filter(m => m.visible).length; const T = window.__tables(); return { timer: document.getElementById('timer').textContent, chips: document.getElementById('chips').textContent, hud: document.getElementById('waveInfo').textContent }; });
+  const gm = await page2.evaluate(() => ({ blades: [...document.querySelectorAll('canvas')].length })); // canvas present
+  check(/^\d\d:\d\d$/.test(gv.timer) && gv.timer !== '00:00', 'guest clock runs (' + gv.timer + ')');
+  check(/Cinder Ring|Kiln Beam|Brimstone/.test(gv.chips), 'guest HUD lists its weapons (' + gv.chips.trim() + ')');
+  await page2.screenshot({ path: process.env.SMOKE_SHOT || '/tmp/ember-guest.png' });
+  // prediction: hold a key on the guest for a second; it must move immediately and end up close to the host's view of it
+  await page2.keyboard.down('d'); await page.waitForTimeout(1000); await page2.keyboard.up('d'); await page.waitForTimeout(400);
+  const pos = await Promise.all([ev(() => ({ x: window.__ST().p2.px, z: window.__ST().p2.pz })), page2.evaluate(() => ({ x: window.__guestState().px, z: window.__guestState().pz }))]);
+  check(pos[0].x > 8 && Math.hypot(pos[0].x - pos[1].x, pos[0].z - pos[1].z) < 2.5, `guest prediction agrees with host (host ${pos[0].x.toFixed(1)}, guest ${pos[1].x.toFixed(1)})`);
   // stop the host earning its own level-ups (kills → XP) so the guest's is deterministic; resolve any already open
   await ev(() => { const ST = window.__ST(); ST.xpNext = 1e9; ST.p2.xpNext = 1e9; });
   for (let i = 0; i < 6; i++) { const open = await ev(() => !document.getElementById('levelup').classList.contains('hidden')); if (!open) break; await ev(() => document.querySelector('#luCards .card').click()); await page.waitForTimeout(150); }

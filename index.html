@@ -1988,7 +1988,7 @@ function update(dt){
     player2.position.set(p.px,1.4+Math.sin(ST.t*3+1)*.12,p.pz);player2.visible=!p.down;p2core.rotation.y+=dt*1.2;p2shell.rotation.y-=dt*.8;p2light.position.set(p.px,2.6,p.pz);
     p2mark.visible=!p.down;p2mark.position.set(p.px,.06,p.pz);
     fireP2(dt);
-    NET.acc+=dt;if(NET.acc>=0.066){NET.acc=0;netBroadcast();}}
+    NET.acc+=dt;if(NET.acc>=0.05){NET.acc=0;netBroadcast();}}
   waveManager(dt);if(ST.over)return;
   if(hostMove)fire(dt);else hideBeams(1);
   updateTelegraphs(dt);hazardTick(dt);stepAmbient(dt,ST.px,ST.pz);
@@ -2560,8 +2560,10 @@ function idleUpdate(dt){idleT+=dt;stepBiome(dt);stepAmbient(dt,0,0);player.visib
 
 /* ============ Duos (co-op) ============ */
 const ENEMY_TYPES=Object.keys(ETYPE);
-const NET={ws:null,role:null,code:null,active:false,peerHere:false,guestInput:{mx:0,mz:0},state:null,acc:0,inAcc:0,fx:[],guestStart:'bolt'};
-const GUEST={px:6,pz:0,enemies:new Map(),overShown:false,lastHp:null,wasDown:false,flash:0,biome:null};
+const NET={ws:null,role:null,code:null,active:false,peerHere:false,guestInput:{mx:0,mz:0,seq:0},state:null,acc:0,inAcc:0,fx:[],guestStart:'bolt'};
+// guest-side prediction state: seq = our input counter, hist = inputs not yet acknowledged by the host,
+// snapAt/snapDt = arrival time and spacing of the last two host snapshots (for interpolation)
+const GUEST={px:6,pz:0,enemies:new Map(),overShown:false,lastHp:null,wasDown:false,flash:0,biome:null,seq:0,hist:[],snapAt:0,snapDt:.066,ackSeq:-1};
 function netUrl(){return (location.protocol==='https:'?'wss://':'ws://')+location.host+'/duo';}
 function netReset(){if(NET.ws){try{NET.ws.onclose=null;NET.ws.close();}catch(e){}}NET.ws=null;NET.role=null;NET.code=null;NET.active=false;NET.peerHere=false;NET.state=null;NET.guestInput={mx:0,mz:0};NET.fx.length=0;}
 function netConnect(then){netReset();const ws=new WebSocket(netUrl());NET.ws=ws;
@@ -2580,12 +2582,12 @@ function netMsg(m){if(!m||typeof m!=='object')return;const t=m.t;
   else if(t==='joinfail'){$('duoMsg').textContent=String(m.reason||'Could not join.').slice(0,80);}
   else if(t==='peer'){if(m.ev==='joined'){NET.peerHere=true;showLobby();}else peerLeft('Partner left the room.');}
   // ---- messages only the HOST may act on (relay forwards everything, so gate by role) ----
-  else if(t==='input'){if(NET.role!=='host')return;NET.guestInput.mx=numOr(m.mx,-1,1);NET.guestInput.mz=numOr(m.mz,-1,1);}
+  else if(t==='input'){if(NET.role!=='host')return;NET.guestInput.mx=numOr(m.mx,-1,1);NET.guestInput.mz=numOr(m.mz,-1,1);NET.guestInput.seq=m.s|0;}
   else if(t==='pick'){if(NET.role!=='host')return;hostApplyGuestPick(m.i|0);} // host: apply guest's chosen upgrade
   else if(t==='hello'){if(NET.role!=='host')return;NET.guestStart=START_CHOICES.includes(m.sw)?m.sw:'bolt';}
   // ---- messages only the GUEST may act on ----
   else if(t==='start'){if(NET.role!=='guest')return;startCoopGuest();}
-  else if(t==='state'){if(NET.role!=='guest')return;NET.state=m;}
+  else if(t==='state'){if(NET.role!=='guest')return;const now=performance.now();if(NET.state){GUEST.snapDt=clamp((now-GUEST.snapAt)/1000,.03,.25);}GUEST.snapAt=now;NET.state=m;guestReconcile(m);}
   else if(t==='offer'){if(NET.role!=='guest')return; // guest: it's my turn to pick an upgrade
     const picks=(Array.isArray(m.picks)?m.picks:[]).filter(p=>p&&(p.kind==='heal'||(p.kind==='w'&&WEAPONS[p.id])||(p.kind==='p'&&PASSIVES[p.id]))).slice(0,3);
     if(!picks.length)picks.push({kind:'heal'});
@@ -2628,8 +2630,8 @@ function startCoopHost(){NET.active=true;NET.role='host';netSend({t:'start'});
   applyPassivesP2();
   player2.visible=true;camera.position.set(CAM_OFF.x,CAM_OFF.y,CAM_OFF.z);setState('run');showTip();}
 /* guest: render the host's world, control own player only */
-function startCoopGuest(){NET.active=true;NET.role='guest';GUEST.px=6;GUEST.pz=0;GUEST.overShown=false;GUEST.lastHp=null;GUEST.wasDown=false;GUEST.flash=0;GUEST.biome=null;
-  coopLU.open=false;coopLU.who=0;$('levelup').classList.add('hidden');$('coopwait').classList.add('hidden');
+function startCoopGuest(){NET.active=true;NET.role='guest';GUEST.px=6;GUEST.pz=0;GUEST.overShown=false;GUEST.lastHp=null;GUEST.wasDown=false;GUEST.flash=0;GUEST.biome=null;GUEST.seq=0;GUEST.hist.length=0;GUEST.corr=null;GUEST.snapAt=performance.now();
+  coopLU.open=false;coopLU.who=0;$('levelup').classList.add('hidden');$('coopwait').classList.add('hidden');$('dailyModal').classList.add('hidden');
   clearScene();GUEST.enemies.clear();
   $('chips').innerHTML='<span class="chip">'+WEAPONS[START_CHOICES.includes(SAVE.startWeapon)?SAVE.startWeapon:'bolt'].name+' <b>1</b></span>';$('timer').textContent='00:00';
   setBiome('ember',false);player2.visible=true;player.visible=true;setState('run');showTip();}
@@ -2648,7 +2650,7 @@ function netBroadcast(){if(!NET.active||!ST||!ST.isHost)return;
   const hr=[];for(const h of ST.hearts)hr.push([R1(h.x),R1(h.z)]);
   const fx=NET.fx.slice();NET.fx.length=0;
   netSend({t:'state',p1:[R1(ST.px),R1(ST.pz),Math.round(ST.hp),ST.maxhp,ST.down?1:0],
-    p2:[R1(ST.p2.px),R1(ST.p2.pz),Math.round(ST.p2.hp),ST.p2.maxhp,ST.p2.down?1:0,(ST.p2.chillT>0||(ST.p2.slowMul||1)<1)?1:0,R1(ST.p2.speed||17)],
+    p2:[R1(ST.p2.px),R1(ST.p2.pz),Math.round(ST.p2.hp),ST.p2.maxhp,ST.p2.down?1:0,(ST.p2.chillT>0||(ST.p2.slowMul||1)<1)?1:0,R1(ST.p2.speed||17),NET.guestInput.seq|0],
     en,orbs,tg,bo,eb,bl,mn,bm,hr,fx,w:ST.wave,l:ST.wlevel,b:ST.isBossWave?1:0,bi:BIOME_ORDER.indexOf(ST.biome),tm:Math.floor(ST.t),
     wt:ST.waveState==='break'&&ST.wave>0?Math.ceil(Math.max(0,ST.waveTimer)):0,
     p2l:ST.p2.level,p2x:ST.p2.xpNext?Math.round(100*ST.p2.xp/ST.p2.xpNext):0,p2w:ST.p2.weapons,
@@ -2656,6 +2658,15 @@ function netBroadcast(){if(!NET.active||!ST||!ST.isHost)return;
     over:ST.over?1:0});}
 /* guest per-frame */
 const _gmid=new THREE.Vector3();
+function guestStep(G,mx,mz,sp,dt){G.px+=mx*sp*dt;G.pz+=mz*sp*dt;const rg=Math.hypot(G.px,G.pz),HD=ARENA*1.35;if(rg>HD){G.px*=HD/rg;G.pz*=HD/rg;}}
+// a host snapshot arrived: start from its position for our last acknowledged input, replay the inputs it
+// hasn't applied yet, and turn the difference into a correction that eases in over the next frames
+function guestReconcile(st){if(!st.p2)return;const ack=st.p2[7]|0;const sp=(st.p2[6]||17)*(st.p2[5]?.6:1);
+  GUEST.hist=GUEST.hist.filter(h=>h.s>ack);
+  const G={px:st.p2[0],pz:st.p2[1]};for(const h of GUEST.hist)guestStep(G,h.mx,h.mz,sp,h.dt);
+  const ex=G.px-GUEST.px,ez=G.pz-GUEST.pz,err=Math.hypot(ex,ez);
+  if(err>12){GUEST.px=G.px;GUEST.pz=G.pz;GUEST.corr=null;} // way off (teleport / boundary pull): snap
+  else if(err>0.05)GUEST.corr={x:ex,z:ez};}
 function guestFrame(dt){const st=NET.state;
   if(coopLU.open){idleT+=dt;stepParticles(dt);fxFrameEnd();return;} // frozen while someone picks an upgrade
   // own input → predict + send (at the speed the host says we have, inside the same circle the host enforces)
@@ -2663,11 +2674,13 @@ function guestFrame(dt){const st=NET.state;
   let mz=(keys['s']||keys['arrowdown']?1:0)-(keys['w']||keys['arrowup']?1:0);
   if(joyOn){mx=jvx;mz=jvy;}const ml=Math.hypot(mx,mz);if(ml>1){mx/=ml;mz/=ml;}
   const gsp=(st&&st.p2&&st.p2[6])||17;const slowed=st&&st.p2&&st.p2[5];
-  if(!(st&&st.p2&&st.p2[4])){GUEST.px+=mx*gsp*(slowed?.6:1)*dt;GUEST.pz+=mz*gsp*(slowed?.6:1)*dt;const rg=Math.hypot(GUEST.px,GUEST.pz),HD=ARENA*1.35;if(rg>HD){GUEST.px*=HD/rg;GUEST.pz*=HD/rg;}}
-  NET.inAcc+=dt;if(NET.inAcc>=0.05){NET.inAcc=0;netSend({t:'input',mx:+mx.toFixed(2),mz:+mz.toFixed(2)});}
+  // client-side prediction: move immediately with our own input, remember the input so the host's
+  // (older) authoritative position can be brought up to date by replaying what it hasn't seen yet
+  if(!(st&&st.p2&&st.p2[4])){guestStep(GUEST,mx,mz,gsp*(slowed?.6:1),dt);GUEST.hist.push({s:GUEST.seq,mx,mz,dt});if(GUEST.hist.length>240)GUEST.hist.shift();}
+  NET.inAcc+=dt;if(NET.inAcc>=0.05){NET.inAcc=0;GUEST.seq++;netSend({t:'input',mx:+mx.toFixed(2),mz:+mz.toFixed(2),s:GUEST.seq});}
   if(st){
     player.position.set(st.p1[0],1.4+Math.sin(idleT*3)*.1,st.p1[1]);player.visible=st.p1[4]?false:true;
-    GUEST.px+=(st.p2[0]-GUEST.px)*Math.min(1,4*dt);GUEST.pz+=(st.p2[1]-GUEST.pz)*Math.min(1,4*dt);
+    if(GUEST.corr){GUEST.px+=GUEST.corr.x*Math.min(1,10*dt);GUEST.pz+=GUEST.corr.z*Math.min(1,10*dt);GUEST.corr.x*=Math.max(0,1-10*dt);GUEST.corr.z*=Math.max(0,1-10*dt);} // ease out the reconciliation error
     player2.position.set(GUEST.px,1.4+Math.sin(idleT*3+1)*.1,GUEST.pz);player2.visible=st.p2[4]?false:true;
     pmark.visible=!st.p1[4];pmark.position.set(st.p1[0],.06,st.p1[1]);p2mark.visible=!st.p2[4];p2mark.position.set(GUEST.px,.06,GUEST.pz);
     p2core.rotation.y+=dt;p2light.position.set(GUEST.px,2.6,GUEST.pz);
@@ -2690,10 +2703,12 @@ function guestFrame(dt){const st=NET.state;
   idleT+=dt;stepParticles(dt);stepLashFx(dt);stepBlasts(dt);fxFrameEnd();}
 function guestSyncEnemies(en,dt){const seen=new Set();
   for(const a of en){const id=a[0],type=ENEMY_TYPES[a[1]];if(!enemyPool[type])continue;seen.add(id);let ge=GUEST.enemies.get(id);
-    if(!ge){const g=takeEnemy(enemyPool[type]);if(!g)continue;if(g.userData.hpbar)g.userData.hpbar.visible=true;if(g.userData.model)g.userData.model.visible=true;ge={g,type,x:a[2],z:a[3],tx:a[2],tz:a[3],lx:a[2],lz:a[3]};GUEST.enemies.set(id,ge);}
+    if(!ge){const g=takeEnemy(enemyPool[type]);if(!g)continue;if(g.userData.hpbar)g.userData.hpbar.visible=true;if(g.userData.model)g.userData.model.visible=true;ge={g,type,x:a[2],z:a[3],fx:a[2],fz:a[3],tx:a[2],tz:a[3],lx:a[2],lz:a[3],at:GUEST.snapAt};GUEST.enemies.set(id,ge);}
+    if(ge.at!==GUEST.snapAt){ge.fx=ge.x;ge.fz=ge.z;ge.at=GUEST.snapAt;} // new snapshot: interpolate from where we are to the new target
     ge.tx=a[2];ge.tz=a[3];ge.hpf=a[4]/255;ge.sc=a[5]||1;}
   for(const [id,ge] of GUEST.enemies){if(!seen.has(id)){releaseEnemy(ge.g);GUEST.enemies.delete(id);}}
-  for(const [id,ge] of GUEST.enemies){ge.x+=(ge.tx-ge.x)*Math.min(1,12*dt);ge.z+=(ge.tz-ge.z)*Math.min(1,12*dt);
+  const f=clamp((performance.now()-GUEST.snapAt)/1000/GUEST.snapDt,0,1.15); // 0..1 across one snapshot interval, slight extrapolation
+  for(const [id,ge] of GUEST.enemies){ge.x=ge.fx+(ge.tx-ge.fx)*f;ge.z=ge.fz+(ge.tz-ge.fz)*f;
     const g=ge.g,ud=g.userData,mdx=ge.tx-ge.lx,mdz=ge.tz-ge.lz;g.scale.setScalar(ge.sc);
     if(Math.abs(mdx)+Math.abs(mdz)>0.008)g.rotation.set(0,Math.atan2(mdx,mdz)+((MODELINFO[ge.type]&&MODELINFO[ge.type].faceOff)||0),0);
     g.position.set(ge.x,ud.model?0:ETYPE[ge.type].y*ge.sc,ge.z);if(ud.mixer)ud.mixer.update(dt*0.9);ge.lx=ge.x;ge.lz=ge.z;
@@ -2751,7 +2766,7 @@ ensureMissions();
 const _ll=$('loading').querySelector('.l');if(_ll)_ll.textContent='SUMMONING MONSTERS…';
 function finishBoot(){initEnemyPools();checkAchievements();$('loading').classList.add('hidden');setState('home');
   verifyAccount();
-  if(dailyAvailable()&&SAVE.bestTime>0)setTimeout(openDaily,500);}
+  if(dailyAvailable()&&SAVE.bestTime>0)setTimeout(()=>{if(state==='home')openDaily();},500);} // never over a run (e.g. a guest who joined quickly)
 // wait for the label font too, so name tags aren't baked in the fallback face
 const fontsReady=(document.fonts&&document.fonts.load)?Promise.race([document.fonts.load('700 30px Barlow'),new Promise(r=>setTimeout(r,2500))]).catch(()=>{}):Promise.resolve();
 Promise.all([loadModels(),fontsReady]).then(finishBoot).catch(e=>{console.error('boot load error',e);finishBoot();});
