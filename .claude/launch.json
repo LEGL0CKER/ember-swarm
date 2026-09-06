@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "ember-swarm", "runtimeExecutable": "node", "runtimeArgs": ["server.js"], "port": 3000 }
+  ]
+}

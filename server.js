@@ -34,6 +34,8 @@ if (DB_URL) {
       ssl: /railway\.internal|localhost|127\.0\.0\.1/.test(DB_URL) ? false : { rejectUnauthorized: false },
       max: 5,
     });
+    // an idle client's backend dropping (DB restart, proxy idle timeout) must not kill the process
+    pool.on('error', e => console.error('pg idle client error', e.message));
     pool.query(
       `CREATE TABLE IF NOT EXISTS scores(
         token TEXT PRIMARY KEY, name TEXT, avatar JSONB,
@@ -82,6 +84,10 @@ function sendJSON(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 const clampInt = (v, lo, hi) => { v = Math.floor(Number(v) || 0); return Math.max(lo, Math.min(hi, v)); };
+// strip control / bidi-override / zero-width characters so a name can't be blank or visually spoof another
+const cleanName = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '').trim().slice(0, max);
+// avatars are small integer trait tables; keep only whole numbers so nothing odd is stored or rendered
+function sanitizeAvatar(a) { const out = {}; if (!a || typeof a !== 'object') return out; for (const k of ['bg', 'species', 'skin', 'eyes', 'mouth', 'hat', 'acc']) { const n = Math.floor(Number(a[k])); if (Number.isFinite(n)) out[k] = Math.max(0, Math.min(99, n)); } return out; }
 
 /* ---------- accounts: password hashing + sessions ---------- */
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
@@ -142,6 +148,7 @@ function rlCount(key, windowMs) {
 }
 // record one hit for `key` (called only on failures / abuse-prone successes)
 function rlAdd(key) { const arr = rlBuckets.get(key) || []; arr.push(Date.now()); rlBuckets.set(key, arr); }
+function rlRefund(key) { const arr = rlBuckets.get(key); if (arr && arr.length) arr.pop(); }
 setInterval(() => { // stop the map from growing unbounded
   const now = Date.now();
   for (const [k, arr] of rlBuckets) { while (arr.length && now - arr[0] > 3600000) arr.shift(); if (!arr.length) rlBuckets.delete(k); }
@@ -159,7 +166,10 @@ function readJson(req, res, limit, cb) {
   req.on('data', c => { body += c; if (body.length > limit) { tooBig = true; req.destroy(); } });
   req.on('end', () => {
     if (tooBig) return cb('too_large');
-    try { cb(null, JSON.parse(body || '{}')); } catch (e) { cb('bad_json'); }
+    let v; try { v = JSON.parse(body || '{}'); } catch (e) { return cb('bad_json'); }
+    // `null`, arrays and primitives are valid JSON but not a request body we understand
+    Promise.resolve().then(() => cb(null, (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}))
+      .catch(e => { console.error('handler error', e && e.message); try { sendJSON(res, 500, { error: 'server_error' }); } catch (_) {} });
   });
   req.on('error', () => cb('req_error'));
 }
@@ -181,7 +191,10 @@ function handleApi(req, res, urlPath) {
       const time = clampInt(d.time, 0, 86400);
       const kills = clampInt(d.kills, 0, 1000000);
       const level = clampInt(d.level, 0, 10000);
-      let avatar = '{}'; try { avatar = JSON.stringify(d.avatar || {}); } catch (e) {}
+      // the score is a pure function of the stats (index.html scoreOf) and the stats must be humanly possible
+      if (score !== time * 3 + kills * 10 + level * 50) return sendJSON(res, 400, { error: 'bad_score' });
+      if (kills > time * 8 + 40 || level > Math.floor(time / 3) + 4) return sendJSON(res, 400, { error: 'implausible' });
+      let avatar = '{}'; try { avatar = JSON.stringify(sanitizeAvatar(d.avatar)); } catch (e) {}
       // a logged-in session ties the score to the account (name comes from the account, can't be spoofed)
       let key, name;
       try {
@@ -192,7 +205,7 @@ function handleApi(req, res, urlPath) {
         const token = String(d.token || '').slice(0, 64);
         if (!token) return sendJSON(res, 400, { error: 'no_token' });
         key = 'd' + token; // namespace device tokens so they can't collide with account keys
-        name = String(d.name || 'Player').slice(0, 16);
+        name = cleanName(d.name, 16) || 'Player';
       }
       pool.query(
         `INSERT INTO scores(token,name,avatar,score,time,kills,level,updated_at)
@@ -222,6 +235,12 @@ function handleApi(req, res, urlPath) {
       if (!validUsername(username)) return sendJSON(res, 400, { error: 'bad_username', message: '3-16 letters, numbers or underscore.' });
       if (!validPassword(password)) return sendJSON(res, 400, { error: 'bad_password', message: 'Password must be at least 8 characters.' });
       const lower = username.toLowerCase();
+      // count login ATTEMPTS up front (a burst of parallel guesses would otherwise all pass the check),
+      // per IP and per targeted account; a successful login refunds its own hit
+      if (urlPath === '/api/login') {
+        if (rlCount('login:u:' + lower, 10 * 60 * 1000) >= 10) return sendJSON(res, 429, { error: 'too_many_attempts', message: 'Too many attempts for this account. Try again in a few minutes.' });
+        rlAdd('login:' + ip); rlAdd('login:u:' + lower);
+      }
       try {
         if (urlPath === '/api/register') {
           // cheap availability check first so a taken name doesn't cost a scrypt hash
@@ -242,7 +261,8 @@ function handleApi(req, res, urlPath) {
           // always run one scrypt (a dummy when the user is unknown) so response time
           // doesn't reveal whether the username exists
           const ok = row ? await verifyPassword(password, row.pass_hash) : (await verifyPassword(password, DUMMY_HASH), false);
-          if (!ok) { rlAdd('login:' + ip); return sendJSON(res, 401, { error: 'invalid_credentials', message: 'Wrong name or password.' }); }
+          if (!ok) return sendJSON(res, 401, { error: 'invalid_credentials', message: 'Wrong name or password.' });
+          rlRefund('login:' + ip); rlRefund('login:u:' + lower);
           const token = await createSession(row.id);
           return sendJSON(res, 200, { ok: true, token, username: row.username });
         }
@@ -282,7 +302,7 @@ function handleApi(req, res, urlPath) {
       if (body.length < 2 || body.length > 1000) return sendJSON(res, 400, { error: 'bad_body', message: 'Feedback must be 2-1000 characters.' });
       let userId = null, name = 'Anonymous';
       try { const acct = d.sessionToken ? await userForToken(String(d.sessionToken)) : null; if (acct) { userId = acct.id; name = acct.username; } } catch (e) {}
-      if (!userId) { const n = typeof d.name === 'string' ? d.name.trim().slice(0, 24) : ''; if (n) name = n; }
+      if (!userId) { const n = cleanName(d.name, 24); if (n) name = n; }
       try {
         await pool.query('INSERT INTO feedback(user_id,name,body) VALUES($1,$2,$3)', [userId, name.slice(0, 24), body]);
         rlAdd('fb:' + ip);
@@ -292,63 +312,103 @@ function handleApi(req, res, urlPath) {
     return;
   }
 
+  // ---- feedback (read-only for the operator; requires ADMIN_TOKEN env and a bearer token; never public) ----
+  if (req.method === 'GET' && urlPath === '/api/admin/feedback') {
+    const want = process.env.ADMIN_TOKEN;
+    if (!want || want.length < 16) return sendJSON(res, 404, { error: 'not_found' });
+    const ip = clientIp(req);
+    if (rlCount('admin:' + ip, 10 * 60 * 1000) >= 10) return sendJSON(res, 429, { error: 'too_many_attempts' });
+    const got = String(req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
+    const a = Buffer.from(got), b = Buffer.from(want);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) { rlAdd('admin:' + ip); return sendJSON(res, 401, { error: 'unauthorized' }); }
+    pool.query('SELECT id, user_id, name, body, created_at FROM feedback ORDER BY id DESC LIMIT 200')
+      .then(r => sendJSON(res, 200, { feedback: r.rows }))
+      .catch(() => sendJSON(res, 500, { error: 'query_failed' }));
+    return;
+  }
+
   return sendJSON(res, 404, { error: 'not_found' });
 }
 
-const server = http.createServer((req, res) => {
-  const urlPath = decodeURIComponent(req.url.split('?')[0]);
-  if (urlPath.startsWith('/api/')) return handleApi(req, res, urlPath);
-
-  const filePath = path.join(ROOT, path.normalize(urlPath === '/' ? '/index.html' : urlPath));
-  if (!filePath.startsWith(ROOT)) { res.writeHead(403); return res.end('Forbidden'); }
+// only these top-level paths are ever served; everything else (server.js, node_modules, dotfiles, git) is not
+const PUBLIC_DIRS = new Set(['models', 'vendor', 'fonts']);
+const PUBLIC_FILES = new Set(['index.html', 'classic.html', 'manifest.json', 'icon.svg', 'sw.js']);
+const IMMUTABLE_DIRS = new Set(['models', 'vendor', 'fonts']); // big, content-stable assets: let browsers keep them
+function serveFile(res, filePath, headers) {
   fs.readFile(filePath, (err, data) => {
-    if (err) {
-      fs.readFile(path.join(ROOT, 'index.html'), (e2, d2) => {
-        if (e2) { res.writeHead(404); return res.end('Not found'); }
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(d2);
-      });
-      return;
-    }
+    if (err) { res.writeHead(404); return res.end('Not found'); }
     const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, { 'Content-Type': TYPES[ext] || 'application/octet-stream' });
+    res.writeHead(200, Object.assign({ 'Content-Type': TYPES[ext] || 'application/octet-stream' }, headers || {}));
     res.end(data);
   });
+}
+const server = http.createServer((req, res) => {
+  try {
+    let urlPath;
+    try { urlPath = decodeURIComponent((req.url || '/').split('?')[0]); } catch (e) { res.writeHead(400); return res.end('Bad request'); }
+    if (urlPath.includes('\0')) { res.writeHead(400); return res.end('Bad request'); }
+    if (urlPath.startsWith('/api/')) return handleApi(req, res, urlPath);
+    if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
+
+    const rel = path.normalize(urlPath === '/' ? '/index.html' : urlPath).replace(/^[/\\]+/, '');
+    const parts = rel.split(/[/\\]/);
+    const ok = parts.length === 1 ? PUBLIC_FILES.has(parts[0]) : (parts.length === 2 && PUBLIC_DIRS.has(parts[0]) && !parts[1].startsWith('.'));
+    if (!ok) return serveFile(res, path.join(ROOT, 'index.html'), { 'Cache-Control': 'no-cache' }); // SPA fallback
+    const filePath = path.join(ROOT, rel);
+    if (!filePath.startsWith(ROOT + path.sep)) { res.writeHead(403); return res.end('Forbidden'); }
+    const headers = IMMUTABLE_DIRS.has(parts[0]) && parts.length === 2 ? { 'Cache-Control': 'public, max-age=31536000, immutable' } : { 'Cache-Control': 'no-cache' };
+    serveFile(res, filePath, headers);
+  } catch (e) {
+    console.error('request error', e && e.message);
+    try { res.writeHead(500); res.end('Server error'); } catch (_) {}
+  }
 });
 
 /* ---------- Duos: WebSocket relay (host-authoritative rooms) ---------- */
 try {
   const { WebSocketServer } = require('ws');
-  const wss = new WebSocketServer({ server, path: '/duo' });
+  // real game messages are a few KB; cap frames so one client can't stall the event loop or balloon memory
+  const wss = new WebSocketServer({ server, path: '/duo', maxPayload: 32 * 1024 });
+  wss.on('error', e => console.error('wss error', e.message));
   const rooms = new Map(); // CODE -> { host, guest }
+  const MAX_ROOMS = 2000;
   const code4 = () => { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c = ''; for (let i = 0; i < 4; i++) c += A[(Math.random() * A.length) | 0]; return c; };
   const send = (ws, obj) => { if (ws && ws.readyState === 1) { try { ws.send(JSON.stringify(obj)); } catch (e) {} } };
   wss.on('connection', ws => {
     ws.room = null; ws.role = null; ws.isAlive = true;
+    // ws emits 'error' on protocol violations (bad UTF-8, RSV bits); unhandled it would throw and exit
+    ws.on('error', () => {});
     ws.on('pong', () => { ws.isAlive = true; });
     ws.on('message', raw => {
-      let m; try { m = JSON.parse(raw); } catch (e) { return; }
-      if (m.t === 'create') {
-        if (ws.room) return;
-        let c; let guard = 0; do { c = code4(); } while (rooms.has(c) && ++guard < 50);
-        rooms.set(c, { host: ws, guest: null }); ws.room = c; ws.role = 'host';
-        send(ws, { t: 'created', code: c });
-      } else if (m.t === 'join') {
-        const code = String(m.code || '').toUpperCase(); const r = rooms.get(code);
-        if (!r) return send(ws, { t: 'joinfail', reason: 'No room with that code' });
-        if (r.guest || r.host === ws) return send(ws, { t: 'joinfail', reason: 'Room is full' });
-        r.guest = ws; ws.room = code; ws.role = 'guest';
-        send(ws, { t: 'joined', code });
-        send(r.host, { t: 'peer', ev: 'joined' });
-      } else {
-        // relay everything else verbatim to the other peer
-        const r = rooms.get(ws.room); if (!r) return;
-        const peer = ws.role === 'host' ? r.guest : r.host;
-        if (peer && peer.readyState === 1) peer.send(raw.toString());
-      }
+      try {
+        let m; try { m = JSON.parse(raw); } catch (e) { return; }
+        if (!m || typeof m !== 'object') return;
+        if (m.t === 'create') {
+          if (ws.room) return;
+          if (rooms.size >= MAX_ROOMS) return send(ws, { t: 'joinfail', reason: 'Too many rooms right now' });
+          let c; let guard = 0; do { c = code4(); } while (rooms.has(c) && ++guard < 50);
+          rooms.set(c, { host: ws, guest: null }); ws.room = c; ws.role = 'host';
+          send(ws, { t: 'created', code: c });
+        } else if (m.t === 'join') {
+          if (ws.room) return send(ws, { t: 'joinfail', reason: 'Already in a room' });
+          const code = String(m.code || '').toUpperCase().slice(0, 4); const r = rooms.get(code);
+          if (!r) return send(ws, { t: 'joinfail', reason: 'No room with that code' });
+          if (r.guest || r.host === ws) return send(ws, { t: 'joinfail', reason: 'Room is full' });
+          r.guest = ws; ws.room = code; ws.role = 'guest';
+          send(ws, { t: 'joined', code });
+          send(r.host, { t: 'peer', ev: 'joined' });
+        } else {
+          // relay everything else verbatim to the other peer; drop frames rather than queue for a stalled peer
+          const r = rooms.get(ws.room); if (!r) return;
+          const peer = ws.role === 'host' ? r.guest : r.host;
+          if (peer && peer.readyState === 1 && peer.bufferedAmount < 256 * 1024) peer.send(raw.toString());
+        }
+      } catch (e) { console.error('relay error', e && e.message); }
     });
     ws.on('close', () => {
       const r = rooms.get(ws.room); if (!r) return;
+      // only touch the room if it still belongs to this socket
+      if ((ws.role === 'host' && r.host !== ws) || (ws.role === 'guest' && r.guest !== ws)) return;
       const peer = ws.role === 'host' ? r.guest : r.host;
       send(peer, { t: 'peer', ev: 'left' });
       // host leaving closes the room; guest leaving frees the slot
@@ -361,4 +421,5 @@ try {
   console.log('Duo relay ready on /duo');
 } catch (e) { console.error('ws relay unavailable:', e.message); }
 
+process.on('unhandledRejection', e => console.error('unhandled rejection', e && e.message));
 server.listen(PORT, () => console.log('Ember Swarm listening on port ' + PORT));

@@ -73,7 +73,27 @@
   #centerBanner .cb-t{font-family:var(--cond);font-weight:700;font-size:clamp(40px,10vw,72px);letter-spacing:.06em;text-transform:uppercase;color:var(--ink);text-shadow:0 4px 30px rgba(0,0,0,.6)}
   #centerBanner .cb-s{font-family:var(--mono);font-size:14px;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);margin-top:4px}
   @keyframes bannerPop{0%{opacity:0;transform:scale(.85)}15%{opacity:1;transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:scale(1.04)}}
+  #centerBanner .cb-s{color:var(--acc,var(--amber))}
+  #centerBanner.biome .cb-t{color:var(--acc,var(--ink));text-shadow:0 0 40px var(--acc,transparent),0 4px 30px rgba(0,0,0,.6)}
+  #centerBanner.biome{animation-duration:2.6s}
+  #waveInfo{color:var(--acc,var(--teal))}
   #val-ember{color:var(--gold)}
+  /* biome transition + status overlays */
+  #biomeFade{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:5;background:#05060c;transition:opacity .8s ease}
+  #coldGlow{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:6;background:radial-gradient(120% 100% at 50% 50%,transparent 44%,rgba(120,190,255,.8) 100%)}
+  #biomePill{position:absolute;top:calc(64px + var(--safe-t));left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--acc,var(--muted));opacity:.85}
+  /* campaign path: biome chapter headers */
+  .bhead{width:100%;max-width:340px;margin:24px 0 2px;padding:14px 16px;border-radius:var(--r);border:1px solid rgba(255,255,255,.12);position:relative;overflow:hidden;
+    background:linear-gradient(135deg,var(--b1,#222) 0%,var(--b2,#111) 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 10px 30px rgba(0,0,0,.35)}
+  .bhead::after{content:'';position:absolute;right:-30px;top:-30px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,var(--b3,rgba(255,255,255,.25)),transparent 70%);opacity:.7}
+  .bhead .bk{font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:rgba(255,255,255,.72)}
+  .bhead .bn{font-family:var(--cond);font-weight:700;font-size:24px;letter-spacing:.04em;text-transform:uppercase;color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.45);margin-top:2px}
+  .bhead .bt{font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.78);margin-top:4px;letter-spacing:.02em}
+  .bhead.locked{filter:saturate(.25) brightness(.55)}
+  .bhead.done .bk::after{content:' · cleared';color:var(--teal)}
+  .lvnode .bsw{width:5px;align-self:stretch;border-radius:3px;background:var(--bsw,var(--line-2));flex:0 0 auto;margin-right:-4px}
+  .lvnode.finale .ln{color:var(--bsw,var(--ink))}
+  .lvnode.finale .num{border-color:var(--bsw,var(--line-2));color:var(--bsw,var(--muted))}
 
   #bottomhud{position:absolute;left:0;right:0;bottom:0;padding:14px 16px calc(14px + var(--safe-b));
     background:linear-gradient(to top,rgba(6,7,13,.92),rgba(6,7,13,.55) 60%,transparent);
@@ -352,6 +372,7 @@
   .rankrow .rn .sub2{font-family:var(--mono);font-size:10.5px;color:var(--muted-2);margin-top:1px}
   .rankrow .rsc{font-family:var(--cond);font-weight:700;font-size:19px;color:var(--amber);text-align:right;font-variant-numeric:tabular-nums}
   .rankrow.me .rsc{color:var(--gold)}
+  @media (pointer:coarse){#hint{display:none}}
   @media (prefers-reduced-motion:reduce){.spin,.pop{animation:none}
     .screen:not(.hidden),.overlay:not(.hidden),.overlay:not(.hidden) .modal,.toast{animation:none}
     .skin:hover,.frow:hover{transform:none}}
@@ -362,6 +383,8 @@
 <div id="vig"></div>
 <div id="flash"></div>
 <div id="boundGlow"></div>
+<div id="coldGlow"></div>
+<div id="biomeFade"></div>
 <div id="dmglayer"></div>
 <div id="toasts"></div>
 
@@ -370,6 +393,7 @@
 <!-- in-run HUD -->
 <div id="hud">
   <div id="timerwrap"><div id="timer">00:00</div><div id="waveInfo">LV 1 · WAVE 1</div></div>
+  <div id="biomePill">EMBER WASTES</div>
   <div id="bossbar" class="hidden"><div class="bb-top"><span id="bossName">WARDEN</span><span id="bossTier">★★★</span></div><div class="bb-bar"><span></span></div></div>
   <div id="topbar">
     <div class="stat"><span class="lab">Kills</span><span class="val num" id="val-kills">0</span></div>
@@ -817,11 +841,19 @@ function beep(f,d,t,v,slide){if(SAVE.muted)return;try{
   if(slide)o.frequency.exponentialRampToValueAtTime(Math.max(30,f+slide),n+d);
   g.gain.setValueAtTime(v||.05,n);g.gain.exponentialRampToValueAtTime(.0001,n+d);
   o.connect(g).connect(AC.destination);o.start(n);o.stop(n+d+.02);}catch(e){}}
-const sfx={shot:()=>beep(620,.05,'square',.009,-300),hit:()=>beep(180,.05,'sawtooth',.02,-80),
-  gem:()=>beep(880,.06,'sine',.03,320),coin:()=>beep(1240,.08,'sine',.035,200),
+// throttle: a nova on a crammed board would otherwise schedule dozens of oscillators in one frame
+const _sfxLast={};const thr=(k,ms,fn)=>()=>{const n=performance.now();if(n-(_sfxLast[k]||0)<ms)return;_sfxLast[k]=n;fn();};
+const sfx={shot:thr('shot',35,()=>beep(620,.05,'square',.009,-300)),hit:thr('hit',45,()=>beep(180,.05,'sawtooth',.02,-80)),
+  gem:thr('gem',40,()=>beep(880,.06,'sine',.03,320)),coin:thr('coin',60,()=>beep(1240,.08,'sine',.035,200)),
   hurt:()=>beep(110,.2,'sawtooth',.07,-60),lvl:()=>{beep(520,.12,'sine',.05,260);setTimeout(()=>beep(780,.16,'sine',.05,300),90);},
   nova:()=>beep(90,.3,'sawtooth',.05,-40),over:()=>beep(60,.6,'sawtooth',.08,-20),
-  buy:()=>{beep(680,.09,'sine',.05,300);setTimeout(()=>beep(1020,.12,'sine',.05,260),80);}};
+  buy:()=>{beep(680,.09,'sine',.05,300);setTimeout(()=>beep(1020,.12,'sine',.05,260),80);},
+  // one voice per weapon so a build is readable by ear
+  lance:thr('lance',60,()=>beep(1400,.09,'triangle',.02,-900)),scatter:thr('scatter',80,()=>{beep(420,.05,'square',.012,300);setTimeout(()=>beep(760,.05,'square',.01,200),30);}),
+  lash:thr('lash',80,()=>beep(240,.13,'sawtooth',.02,260)),chain:thr('chain',60,()=>beep(600,.08,'square',.02,-200)),
+  mine:thr('mine',60,()=>beep(70,.22,'sawtooth',.06,-30)),beam:thr('beam',200,()=>beep(180,.12,'triangle',.012,40)),
+  heart:()=>{beep(660,.1,'sine',.05,200);setTimeout(()=>beep(990,.14,'sine',.05,160),70);},
+  biome:(i)=>{const f=[330,440,392,294,349][i%5];beep(f,.35,'triangle',.05,60);setTimeout(()=>beep(f*1.5,.5,'triangle',.045,20),160);}};
 
 /* ============ three setup ============ */
 const cv=$('cv');
@@ -837,7 +869,7 @@ function resize(){renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWi
 addEventListener('resize',resize);resize();
 
 const hemi=new THREE.HemisphereLight(0x9aa8d8,0x24263f,0.95);scene.add(hemi);
-scene.add(new THREE.AmbientLight(0x4a5578,0.55));
+const amb=new THREE.AmbientLight(0x4a5578,0.55);scene.add(amb);
 const dir=new THREE.DirectionalLight(0xffe6c4,1.1);dir.position.set(-30,52,22);
 if(!isMobile){dir.castShadow=true;dir.shadow.mapSize.set(1024,1024);
   const c=dir.shadow.camera;c.near=1;c.far=150;c.left=c.bottom=-72;c.right=c.top=72;dir.shadow.bias=-0.0005;}
@@ -851,10 +883,126 @@ const ground=new THREE.Mesh(new THREE.PlaneGeometry(ARENA*4,ARENA*4),
 ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
 // grid doubled in size (extent 2x, same cell size); red boundary ring kept the same size
 const grid=new THREE.GridHelper(ARENA*4,140,0x44507e,0x2a3052);grid.position.y=.02;
-grid.material.transparent=true;grid.material.opacity=.6;scene.add(grid);
-{const ring=new THREE.Mesh(new THREE.RingGeometry(ARENA-1.2,ARENA,140),
+grid.material.transparent=true;grid.material.opacity=.6;grid.material.vertexColors=false;grid.material.color.setHex(0x3a4470);scene.add(grid);
+const bring=new THREE.Mesh(new THREE.RingGeometry(ARENA-1.2,ARENA,140),
   new THREE.MeshBasicMaterial({color:0xFF4F66,side:THREE.DoubleSide,transparent:true,opacity:.4}));
- ring.rotation.x=-Math.PI/2;ring.position.y=.05;scene.add(ring);}
+bring.rotation.x=-Math.PI/2;bring.position.y=.05;scene.add(bring);
+
+/* ============ BIOMES ============
+   Every world the swarm lives in is a row here: palette + fog + lights, ambient particles, decor,
+   the mob roster (type + the biome tier it joins at), the boss list (classic first, the biome's
+   finale boss last), the hazards it runs, and the tips it teaches. Adding a biome = adding a row. */
+const BIOMES={
+  ember:{name:'Ember Wastes',tag:'Ash, cinder and the first swarm',accent:'#FFB13D',ui:['#5a2a10','#1a0f0a','#ff9a3d'],
+    sky:0x161c33,fog:[95,290],ground:0x1e2340,grid:0x3a4470,ring:0xFF4F66,exposure:1.32,
+    hemi:[0x9aa8d8,0x24263f,.95],amb:[0x4a5578,.55],sun:[0xffe6c4,1.1],fill:[0xaec4ff,.6],
+    ambient:{mode:'rise',col:[0xFF7A2E,0xFFD27A],n:130,size:.5},
+    decor:{kind:'rock',col:0x3a1c1c,emis:0xFF4A1E,ei:.35,n:64,scale:[1.2,3.4]},
+    roster:[['grub',1],['dart',1],['stinger',1],['brute',2],['bomber',2],['leaper',2],['charger',3],['assassin',3]],
+    bosses:['boss','pyrelord'],hazards:['vents'],deathCol:0xFF6650,
+    tips:['Magma vents flare where the ground glows red — step off before they erupt.','Cinder Bombers burst on death. Kill them at range or move.']},
+  frost:{name:'Frost Reach',tag:'Pale light, brittle ice and things that wait in it',accent:'#8FE0FF',ui:['#123a5c','#0a1a2c','#8fe0ff'],
+    sky:0x1a2b48,fog:[80,240],ground:0x33507a,grid:0x6a9ad0,ring:0xFF4F66,exposure:1.42,
+    hemi:[0xd6ecff,0x2a3a55,1.0],amb:[0x6f86b3,.6],sun:[0xe4f6ff,1.15],fill:[0xa0d8ff,.7],
+    ambient:{mode:'fall',col:[0xFFFFFF,0xBFE6FF],n:150,size:.42},
+    decor:{kind:'crystal',col:0x8fd8ff,emis:0x4FC8FF,ei:.55,n:56,scale:[1.4,4.6]},
+    roster:[['grub',1],['dart',1],['kiter',1],['shielder',2],['brute',2],['wraith',2],['leaper',3],['assassin',3]],
+    bosses:['golem','rimeking'],hazards:['icefall','chill'],deathCol:0x9FE4FF,
+    tips:['Pale blue ice slows you while you stand on it. Fight around it, not in it.','Bulwarks block hits from the front — circle behind them.']},
+  verdant:{name:'Verdant Hollow',tag:'Spore-thick canopy where the swarm grows back',accent:'#7CFF9E',ui:['#0f3a22','#08170f','#7cff9e'],
+    sky:0x0f2018,fog:[70,220],ground:0x1c3326,grid:0x3f8f5c,ring:0xFF4F66,exposure:1.3,
+    hemi:[0xa8e0b0,0x152418,.95],amb:[0x3f6a4a,.55],sun:[0xfff0c8,1.05],fill:[0x8fe0a0,.55],
+    ambient:{mode:'drift',col:[0x9CFF6A,0x3FE0C5],n:120,size:.55},
+    decor:{kind:'shroom',col:0x2f7a4a,emis:0x3FE0A0,ei:.5,n:60,scale:[1.2,3.6]},
+    roster:[['grub',1],['stinger',1],['hive',1],['burrower',2],['mender',2],['leaper',2],['spitter',3],['charger',3]],
+    bosses:['colossus','monarch'],hazards:['spores','vines'],deathCol:0x8FCF3A,
+    tips:['Spore clouds drift toward you. Keep moving and they never settle.','Menders heal everything near them — make them your first target.','Burrowers surface under your feet. Watch for the churned earth.']},
+  void:{name:'Voidspire',tag:'Where gravity bends and the dark shoots back',accent:'#C58BFF',ui:['#2c1160','#0c0618','#c58bff'],
+    sky:0x0b0716,fog:[70,205],ground:0x1a1030,grid:0x7a3fd0,ring:0xFF4F66,exposure:1.28,
+    hemi:[0xb08cff,0x1a0a30,.9],amb:[0x5a3a8a,.6],sun:[0xe6d0ff,.95],fill:[0xff6fd5,.65],
+    ambient:{mode:'swirl',col:[0xC58BFF,0xFF6FD5],n:140,size:.5},
+    decor:{kind:'spire',col:0x2a1450,emis:0x9D5CFF,ei:.6,n:50,scale:[2,6]},
+    roster:[['dart',1],['wraith',1],['mote',1],['anchor',2],['spitter',2],['stinger',2],['assassin',3],['charger',3]],
+    bosses:['trickster','overlord','archon'],hazards:['wells','voidrain'],deathCol:0xC58BFF,
+    tips:['Violet wells drag you in, then collapse. Run against the pull early.','Void Motes split when they die. Thin the swarm before it multiplies.']},
+  bone:{name:'Bone Desert',tag:'Sun-bleached dunes that do not stay dead',accent:'#FFD76A',ui:['#6a5020','#241a0a','#ffd76a'],
+    sky:0x3b3121,fog:[60,190],ground:0x5c4a30,grid:0x8a7248,ring:0xFF4F66,exposure:1.38,
+    hemi:[0xffe8b0,0x5a4628,1.05],amb:[0x8a7455,.6],sun:[0xfff2d0,1.3],fill:[0xffc890,.6],
+    ambient:{mode:'blow',col:[0xE8D5A8,0xC9A24B],n:140,size:.45},
+    decor:{kind:'bone',col:0xEDE4D0,emis:0xB8A888,ei:.15,n:52,scale:[1.6,4.8]},
+    roster:[['grub',1],['revenant',1],['dart',1],['impaler',2],['brute',2],['spitter',2],['charger',3],['bomber',3],['assassin',3]],
+    bosses:['shaman','ossuary'],hazards:['sandstorm','quicksand'],deathCol:0xEDE4D0,
+    tips:['Revenants rise again from their bone piles unless you move on quickly.','Sandstorms shrink your sight and quicken the dead. Stay near cover.','Impalers line up a charge — the marked lane is where they will be.']},
+};
+const BIOME_ORDER=['ember','frost','verdant','void','bone'];
+const biomeById=id=>BIOMES[id]||BIOMES.ember;
+/* palette lerping: the scene keeps a "current" palette that slides toward the target over a transition */
+const _c1=new THREE.Color(),_c2=new THREE.Color();
+const PAL={sky:new THREE.Color(),fog:new THREE.Color(),near:95,far:290,ground:new THREE.Color(),grid:new THREE.Color(),ring:new THREE.Color(),
+  hemiA:new THREE.Color(),hemiB:new THREE.Color(),hemiI:.95,amb:new THREE.Color(),ambI:.55,sun:new THREE.Color(),sunI:1.1,fill:new THREE.Color(),fillI:.6,exposure:1.32};
+function palFrom(b){return {sky:_c1.setHex(b.sky).clone(),fog:_c1.setHex(b.sky).clone(),near:b.fog[0],far:b.fog[1],ground:_c1.setHex(b.ground).clone(),grid:_c1.setHex(b.grid).clone(),ring:_c1.setHex(b.ring).clone(),
+  hemiA:_c1.setHex(b.hemi[0]).clone(),hemiB:_c1.setHex(b.hemi[1]).clone(),hemiI:b.hemi[2],amb:_c1.setHex(b.amb[0]).clone(),ambI:b.amb[1],sun:_c1.setHex(b.sun[0]).clone(),sunI:b.sun[1],fill:_c1.setHex(b.fill[0]).clone(),fillI:b.fill[1],exposure:b.exposure||1.32};}
+function palLerp(a,b,t){for(const k in PAL){const v=PAL[k];if(v&&v.isColor)v.copy(a[k]).lerp(b[k],t);else PAL[k]=a[k]+(b[k]-a[k])*t;}}
+function palApply(){scene.background.copy(PAL.sky);scene.fog.color.copy(PAL.fog);scene.fog.near=PAL.near;scene.fog.far=PAL.far;
+  ground.material.color.copy(PAL.ground);grid.material.color.copy(PAL.grid);bring.material.color.copy(PAL.ring);
+  hemi.color.copy(PAL.hemiA);hemi.groundColor.copy(PAL.hemiB);hemi.intensity=PAL.hemiI;amb.color.copy(PAL.amb);amb.intensity=PAL.ambI;
+  dir.color.copy(PAL.sun);dir.intensity=PAL.sunI;fill.color.copy(PAL.fill);fill.intensity=PAL.fillI;renderer.toneMappingExposure=PAL.exposure;}
+/* ambient particles — a cloud that follows the player, animated per biome mode (rise / fall / drift / swirl / blow) */
+const AMB_N=isMobile?80:160;
+const ambGeo=new THREE.BufferGeometry();const ambPos=new Float32Array(AMB_N*3),ambCol=new Float32Array(AMB_N*3);
+ambGeo.setAttribute('position',new THREE.BufferAttribute(ambPos,3));ambGeo.setAttribute('color',new THREE.BufferAttribute(ambCol,3));
+const ambMat=new THREE.PointsMaterial({size:.5,vertexColors:true,transparent:true,opacity:.75,depthWrite:false,blending:THREE.AdditiveBlending});
+const ambPoints=new THREE.Points(ambGeo,ambMat);ambPoints.frustumCulled=false;scene.add(ambPoints);
+const ambP=[];for(let i=0;i<AMB_N;i++)ambP.push({x:rand(-40,40),y:rand(0,16),z:rand(-40,40),s:rand(.6,1.4),ph:Math.random()*TAU});
+let ambMode='rise',ambT=0;
+function ambRecolor(b){const c0=new THREE.Color(b.ambient.col[0]),c1=new THREE.Color(b.ambient.col[1]);
+  for(let i=0;i<AMB_N;i++){const t=Math.random();ambCol[i*3]=c0.r+(c1.r-c0.r)*t;ambCol[i*3+1]=c0.g+(c1.g-c0.g)*t;ambCol[i*3+2]=c0.b+(c1.b-c0.b)*t;}
+  ambGeo.attributes.color.needsUpdate=true;ambMat.size=b.ambient.size||.5;ambMode=b.ambient.mode;
+  const vis=Math.min(AMB_N,b.ambient.n||AMB_N);ambGeo.setDrawRange(0,vis);}
+function stepAmbient(dt,cx,cz){ambT+=dt;const R=44;
+  for(let i=0;i<AMB_N;i++){const p=ambP[i];
+    if(ambMode==='rise'){p.y+=dt*(1.2+p.s);p.x+=Math.sin(ambT*1.3+p.ph)*dt*.8;if(p.y>18){p.y=0;p.x=cx+rand(-R,R);p.z=cz+rand(-R,R);}}
+    else if(ambMode==='fall'){p.y-=dt*(2.2+p.s*1.5);p.x+=Math.sin(ambT*.9+p.ph)*dt*1.4;if(p.y<0){p.y=20;p.x=cx+rand(-R,R);p.z=cz+rand(-R,R);}}
+    else if(ambMode==='drift'){p.x+=Math.sin(ambT*.5+p.ph)*dt*1.6;p.z+=Math.cos(ambT*.4+p.ph*1.3)*dt*1.6;p.y=2+Math.sin(ambT*.7+p.ph)*1.6+p.s*3;}
+    else if(ambMode==='swirl'){const a=ambT*.35*p.s+p.ph,rr=10+p.s*22;p.x=cx+Math.cos(a)*rr;p.z=cz+Math.sin(a)*rr;p.y=1.5+Math.sin(ambT*1.1+p.ph)*2.5+p.s*4;}
+    else{p.x+=dt*(18+p.s*12);p.y=.6+Math.abs(Math.sin(ambT*2+p.ph))*2.2*p.s;if(p.x>cx+R){p.x=cx-R;p.z=cz+rand(-R,R);}}
+    // keep the cloud around the player without a visible snap
+    if(p.x<cx-R)p.x+=2*R;else if(p.x>cx+R)p.x-=2*R;if(p.z<cz-R)p.z+=2*R;else if(p.z>cz+R)p.z-=2*R;
+    ambPos[i*3]=p.x;ambPos[i*3+1]=p.y;ambPos[i*3+2]=p.z;}
+  ambGeo.attributes.position.needsUpdate=true;}
+/* decor — instanced low-poly props scattered toward the arena edge so each biome reads as a place */
+const DECOR_GEO={
+  rock:()=>new THREE.DodecahedronGeometry(1,0),
+  crystal:()=>{const g=new THREE.ConeGeometry(.55,2.4,5);g.translate(0,1.2,0);return g;},
+  shroom:()=>{const cap=new THREE.SphereGeometry(1,7,5,0,TAU,0,Math.PI/2);cap.translate(0,1.3,0);const stem=new THREE.CylinderGeometry(.28,.38,1.4,6);stem.translate(0,.7,0);return mergeGeos([cap,stem]);},
+  spire:()=>{const g=new THREE.OctahedronGeometry(.8,0);g.scale(1,3.2,1);g.translate(0,2.4,0);return g;},
+  bone:()=>{const a=new THREE.CylinderGeometry(.22,.3,3,6);a.translate(0,1.5,0);const k=new THREE.SphereGeometry(.42,6,5);k.translate(0,3.1,0);return mergeGeos([a,k]);},
+};
+function mergeGeos(list){ // tiny merge (positions + normals only) so decor stays one draw call per biome
+  const ngs=list.map(g=>g.index?g.toNonIndexed():g);let n=0;for(const g of ngs)n+=g.attributes.position.count;
+  const pos=new Float32Array(n*3),nor=new Float32Array(n*3);let o=0;
+  for(const ng of ngs){pos.set(ng.attributes.position.array,o*3);nor.set(ng.attributes.normal.array,o*3);o+=ng.attributes.position.count;}
+  const out=new THREE.BufferGeometry();out.setAttribute('position',new THREE.BufferAttribute(pos,3));out.setAttribute('normal',new THREE.BufferAttribute(nor,3));return out;}
+let decorMesh=null;const _dm=new THREE.Matrix4(),_dq=new THREE.Quaternion(),_dp=new THREE.Vector3(),_ds=new THREE.Vector3(),_de=new THREE.Euler();
+function buildDecor(b){if(decorMesh){scene.remove(decorMesh);decorMesh.geometry.dispose();decorMesh.material.dispose();decorMesh=null;}
+  const d=b.decor;if(!d)return;const n=isMobile?Math.floor(d.n*.55):d.n;
+  const mat=new THREE.MeshStandardMaterial({color:d.col,emissive:d.emis,emissiveIntensity:d.ei,roughness:.7,flatShading:true});
+  const im=new THREE.InstancedMesh(DECOR_GEO[d.kind](),mat,n);im.castShadow=false;im.receiveShadow=!isMobile;
+  for(let i=0;i<n;i++){const a=Math.random()*TAU,rr=i<n*.2?rand(28,70):rand(72,ARENA*1.3);const s=rand(d.scale[0],d.scale[1]);
+    _dp.set(Math.cos(a)*rr,0,Math.sin(a)*rr);_de.set(d.kind==='rock'?rand(0,1):0,Math.random()*TAU,d.kind==='rock'?rand(0,1):0);_dq.setFromEuler(_de);_ds.set(s,s*(d.kind==='rock'?.7:1),s);
+    _dm.compose(_dp,_dq,_ds);im.setMatrixAt(i,_dm);}
+  im.instanceMatrix.needsUpdate=true;scene.add(im);decorMesh=im;}
+/* biome state machine: setBiome(id) either snaps or starts a timed cross-fade of every palette channel */
+const BT={cur:'ember',from:null,to:null,t:0,dur:2.2,pa:null,pb:null};
+const biomeFadeEl=$('biomeFade'),biomePillEl=$('biomePill');
+function setBiome(id,animate){id=BIOMES[id]?id:'ember';const b=BIOMES[id];
+  document.documentElement.style.setProperty('--acc',b.accent);biomePillEl.textContent=b.name.toUpperCase();
+  if(!animate||BT.cur===id){BT.cur=id;BT.to=null;palLerp(palFrom(b),palFrom(b),0);palApply();ambRecolor(b);buildDecor(b);return;}
+  BT.from=BT.cur;BT.to=id;BT.t=0;BT.pa=palFrom(BIOMES[BT.from]);BT.pb=palFrom(b);
+  biomeFadeEl.style.opacity='.55';setTimeout(()=>{ambRecolor(b);buildDecor(b);biomeFadeEl.style.opacity='0';},700);}
+function stepBiome(dt){if(!BT.to)return;BT.t+=dt;const p=Math.min(1,BT.t/BT.dur),e=p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+  palLerp(BT.pa,BT.pb,e);palApply();if(p>=1){BT.cur=BT.to;BT.to=null;}}
+setBiome('ember',false);
 
 /* ============ shared assets ============ */
 const geoOrb=new THREE.OctahedronGeometry(0.5);
@@ -903,6 +1051,40 @@ const matColossusCore=new THREE.MeshStandardMaterial({color:0xFF7A2E,emissive:0x
 const geoOverlord=new THREE.DodecahedronGeometry(4.4,0);
 const matOverlord=new THREE.MeshStandardMaterial({color:0x3a1060,emissive:0x1a0040,emissiveIntensity:1.1,roughness:.5,flatShading:true});
 const matOverlordCore=new THREE.MeshStandardMaterial({color:0xC58BFF,emissive:0x9D2EFF,emissiveIntensity:2.6,roughness:.35});
+// ---- biome mobs & finale bosses (procedural fallbacks; the real GLB is grafted on top when it loads) ----
+const geoBomber=new THREE.IcosahedronGeometry(0.9,0);
+const matBomber=new THREE.MeshStandardMaterial({color:0xFF6A2E,emissive:0x7a2200,emissiveIntensity:1.2,roughness:.5,flatShading:true});
+const geoShielder=new THREE.BoxGeometry(1.8,2.2,1.8);
+const matShielder=new THREE.MeshStandardMaterial({color:0x6f8fb8,emissive:0x1a2a44,emissiveIntensity:.8,roughness:.6,flatShading:true});
+const geoKiter=new THREE.OctahedronGeometry(1.0,0);
+const matKiter=new THREE.MeshStandardMaterial({color:0x8FE0FF,emissive:0x1a4a6a,emissiveIntensity:1.2,roughness:.4,flatShading:true});
+const geoBurrower=new THREE.SphereGeometry(1.1,8,6);
+const matBurrower=new THREE.MeshStandardMaterial({color:0x8a6a3a,emissive:0x2a1a08,emissiveIntensity:.8,roughness:.7,flatShading:true});
+const geoMender=new THREE.ConeGeometry(1.0,1.8,6);
+const matMender=new THREE.MeshStandardMaterial({color:0x7CFF9E,emissive:0x1f6a3a,emissiveIntensity:1.2,roughness:.5,flatShading:true});
+const geoMote=new THREE.IcosahedronGeometry(1.0,1);
+const matMote=new THREE.MeshStandardMaterial({color:0xFF6FD5,emissive:0x7a1a5a,emissiveIntensity:1.4,roughness:.35,flatShading:true});
+const geoAnchor=new THREE.TorusGeometry(1.0,0.35,8,14);
+const matAnchor=new THREE.MeshStandardMaterial({color:0x9D5CFF,emissive:0x3a1a7a,emissiveIntensity:1.4,roughness:.4,flatShading:true});
+const geoRevenant=new THREE.ConeGeometry(0.8,2.2,5);
+const matRevenant=new THREE.MeshStandardMaterial({color:0xEDE4D0,emissive:0x6a6250,emissiveIntensity:.9,roughness:.5,flatShading:true,transparent:true,opacity:.9});
+const geoImpaler=new THREE.ConeGeometry(1.0,2.6,4);
+const matImpaler=new THREE.MeshStandardMaterial({color:0xC9A24B,emissive:0x4a3a10,emissiveIntensity:1,roughness:.5,flatShading:true});
+const geoPyre=new THREE.IcosahedronGeometry(3.2,0);
+const matPyre=new THREE.MeshStandardMaterial({color:0x8a2a10,emissive:0x4a1000,emissiveIntensity:1.1,roughness:.5,flatShading:true});
+const matPyreCore=new THREE.MeshStandardMaterial({color:0xFFB13D,emissive:0xFF6A00,emissiveIntensity:2.6,roughness:.35});
+const geoRime=new THREE.DodecahedronGeometry(3.0,0);
+const matRime=new THREE.MeshStandardMaterial({color:0xBFE6FF,emissive:0x2a5a8a,emissiveIntensity:1,roughness:.35,flatShading:true});
+const matRimeCore=new THREE.MeshStandardMaterial({color:0xEAF8FF,emissive:0x4FC8FF,emissiveIntensity:2.4,roughness:.3});
+const geoMonarch=new THREE.IcosahedronGeometry(3.0,0);
+const matMonarch=new THREE.MeshStandardMaterial({color:0x2f7a4a,emissive:0x0f3a1a,emissiveIntensity:1,roughness:.5,flatShading:true});
+const matMonarchCore=new THREE.MeshStandardMaterial({color:0xC9FFB0,emissive:0x7CFF9E,emissiveIntensity:2.4,roughness:.35});
+const geoArchon=new THREE.OctahedronGeometry(3.0,0);
+const matArchon=new THREE.MeshStandardMaterial({color:0x2a1450,emissive:0x1a0a40,emissiveIntensity:1.1,roughness:.45,flatShading:true});
+const matArchonCore=new THREE.MeshStandardMaterial({color:0xE6D0FF,emissive:0xC58BFF,emissiveIntensity:2.6,roughness:.35});
+const geoOssuary=new THREE.DodecahedronGeometry(3.4,0);
+const matOssuary=new THREE.MeshStandardMaterial({color:0xEDE4D0,emissive:0x5a5040,emissiveIntensity:.9,roughness:.55,flatShading:true});
+const matOssuaryCore=new THREE.MeshStandardMaterial({color:0xFFD76A,emissive:0xFFB13D,emissiveIntensity:2.4,roughness:.35});
 // billboarded enemy health bar (drawn over everything)
 const geoBar=new THREE.PlaneGeometry(1,1);
 function makeHpBar(w){const grp=new THREE.Group();
@@ -975,17 +1157,33 @@ const ETYPE={
   golem:   {r:1.9,hp:520,spd:2.7, dmg:26,xp:9, y:1.9, cat:'boss', from:150, name:'Golem',  behavior:'slow', geo:geoGolem,mat:matGolem,coreMat:matGolemCore,eyes:[.7,1.3,.5,1.4],w:3.6},
   colossus:{r:4.0,hp:2000,spd:2.2,dmg:34,xp:45,y:4.0, cat:'boss', from:480, name:'Colossus',behavior:'summon',geo:geoColossus,mat:matColossus,coreMat:matColossusCore,shards:6,eyes:[1.1,3.2,1,2.6],w:6.5},
   overlord:{r:4.4,hp:2800,spd:2.4,dmg:38,xp:60,y:4.4, cat:'boss', from:600, name:'Overlord',behavior:'overlord',geo:geoOverlord,mat:matOverlord,coreMat:matOverlordCore,shards:8,eyes:[1.3,3.6,1.1,3],w:7},
+  // ---- biome mobs — each has a genuinely new behaviour (see BEHAVIORS / ON_DEATH) ----
+  bomber:  {r:0.9,hp:40, spd:7.5, dmg:8, xp:2, y:0.9, cat:'small',from:60,  name:'Cinder Bomber',behavior:'exploder',geo:geoBomber,mat:matBomber,eyes:[.3,.75,.3,.9],w:2.2,tint:0xFF6A2E},
+  shielder:{r:1.3,hp:115,spd:4.2, dmg:14,xp:4, y:1.3, cat:'elite',from:120, name:'Rime Bulwark',behavior:'shield',geo:geoShielder,mat:matShielder,eyes:[.42,.95,.4,1],w:2.2,clip:'Fast_Flying'},
+  kiter:   {r:0.9,hp:55, spd:8.0, dmg:9, xp:3, y:1.1, cat:'elite',from:90,  name:'Rime Spitter',behavior:'kite',geo:geoKiter,mat:matKiter,eyes:[.3,.8,.3,.9],w:2.0,clip:'Fast_Flying'},
+  burrower:{r:1.1,hp:85, spd:9.0, dmg:14,xp:3, y:1.1, cat:'elite',from:150, name:'Root Burrower',behavior:'burrow',geo:geoBurrower,mat:matBurrower,eyes:[.36,.9,.3,1],w:2.2,clip:'Fast_Flying'},
+  mender:  {r:1.0,hp:70, spd:4.5, dmg:6, xp:4, y:1.0, cat:'elite',from:150, name:'Spore Mender',behavior:'heal',geo:geoMender,mat:matMender,eyes:[.32,.7,.2,.9],w:2.0},
+  mote:    {r:1.0,hp:46, spd:7.0, dmg:8, xp:1, y:1.0, cat:'small',from:60,  name:'Void Mote',behavior:'split2',geo:geoMote,mat:matMote,eyes:[.34,.8,.25,.9],w:1.6,tint:0xB07BFF},
+  anchor:  {r:1.2,hp:95, spd:2.6, dmg:10,xp:4, y:1.4, cat:'elite',from:200, name:'Void Anchor',behavior:'gravity',geo:geoAnchor,mat:matAnchor,eyes:[.4,.9,.3,1],w:2.0,clip:'Fast_Flying'},
+  revenant:{r:1.0,hp:50, spd:6.5, dmg:11,xp:2, y:1.1, cat:'small',from:60,  name:'Revenant',behavior:'rise',geo:geoRevenant,mat:matRevenant,eyes:[.3,.7,.5,.9],w:1.7,clip:'Fast_Flying'},
+  impaler: {r:1.2,hp:100,spd:4.5, dmg:17,xp:4, y:1.2, cat:'elite',from:200, name:'Bone Impaler',behavior:'lunge',geo:geoImpaler,mat:matImpaler,eyes:[.36,1,.4,1],w:2.2},
+  // ---- biome finale bosses — attack kits live in BOSS_KITS ----
+  pyrelord:{r:3.2,hp:1600,spd:3.2,dmg:32,xp:40,y:3.2,cat:'boss',from:300,name:'Pyre Lord',geo:geoPyre,mat:matPyre,coreMat:matPyreCore,shards:6,eyes:[.9,2.6,.8,2],w:5.2,clip:'Fast_Flying'},
+  rimeking:{r:3.0,hp:1500,spd:2.6,dmg:30,xp:40,y:3.0,cat:'boss',from:300,name:'Rime Sovereign',geo:geoRime,mat:matRime,coreMat:matRimeCore,shards:6,eyes:[.9,2.4,.8,2],w:5.4,clip:'Fast_Flying'},
+  monarch: {r:3.0,hp:1700,spd:3.0,dmg:30,xp:42,y:3.0,cat:'boss',from:300,name:'Verdant Monarch',geo:geoMonarch,mat:matMonarch,coreMat:matMonarchCore,shards:5,eyes:[.9,2.4,.8,2],w:5.6,clip:'Fast_Flying'},
+  archon:  {r:2.8,hp:1800,spd:3.4,dmg:32,xp:45,y:2.8,cat:'boss',from:300,name:'Void Archon',geo:geoArchon,mat:matArchon,coreMat:matArchonCore,shards:8,eyes:[.8,2.2,.7,1.8],w:5.0},
+  ossuary: {r:3.4,hp:2000,spd:2.4,dmg:34,xp:48,y:3.4,cat:'boss',from:300,name:'Ossuary King',geo:geoOssuary,mat:matOssuary,coreMat:matOssuaryCore,shards:8,eyes:[1,2.8,.9,2.2],w:5.6,clip:'Fast_Flying'},
 };
 const isBossType=t=>ETYPE[t].cat==='boss';
 // threat tier 1..5 → clear "how strong" labels above each enemy
-const TIER={grub:1,dart:1,stinger:1,leaper:2,wraith:2,brute:2,hive:2,charger:3,spitter:3,assassin:3,boss:3,golem:4,trickster:4,colossus:5,shaman:5,overlord:5};
+const TIER={grub:1,dart:1,stinger:1,mote:1,leaper:2,wraith:2,brute:2,hive:2,bomber:2,kiter:2,revenant:2,charger:3,spitter:3,assassin:3,shielder:3,burrower:3,mender:3,anchor:3,impaler:3,boss:3,golem:4,trickster:4,pyrelord:4,rimeking:4,colossus:5,shaman:5,overlord:5,monarch:5,archon:5,ossuary:5};
 const TIERCOL=['#9AA0BC','#7CFF9E','#FFD23D','#FF9A3D','#FF4F66'];
 const labelCache={};
 function labelTex(type){if(labelCache[type])return labelCache[type];
   const tier=TIER[type]||1,name=(ETYPE[type].name||type).toUpperCase(),col=TIERCOL[Math.min(4,tier-1)];
   const c=document.createElement('canvas');c.width=256;c.height=72;const g=c.getContext('2d');
   g.textAlign='center';g.textBaseline='middle';g.shadowColor='rgba(0,0,0,.85)';g.shadowBlur=5;
-  g.fillStyle=col;g.font='700 30px Barlow,Arial,sans-serif';g.fillText(name,128,25);
+  g.fillStyle=col;g.font='700 '+(name.length>12?24:30)+'px Barlow,Arial,sans-serif';g.fillText(name,128,25);
   g.font='700 22px Arial,sans-serif';g.fillText('★'.repeat(tier),128,54);
   const tex=new THREE.CanvasTexture(c);labelCache[type]=tex;return tex;}
 function addLabel(hpbar,type){const big=ETYPE[type].cat==='boss';const lh=big?1.8:1.05,asp=256/72;
@@ -993,33 +1191,55 @@ function addLabel(hpbar,type){const big=ETYPE[type].cat==='boss';const lh=big?1.
   lab.scale.set(lh*asp,lh,1);lab.position.y=big?1.2:0.64;lab.renderOrder=1000;hpbar.add(lab);}
 const MAXE=isMobile?46:80; // hard cap on concurrent enemies
 /* ---- real 3D monster models (Quaternius, CC0) ---- */
-const MODEL_MAP={grub:'Frog',dart:'Fish',stinger:'Birb',wraith:'BlueDemon',brute:'Orc',hive:'Cactoro',charger:'Dino',spitter:'Alien',leaper:'Bunny',assassin:'Ninja',boss:'Demon',golem:'Yeti',trickster:'Monkroose',shaman:'Tribal',colossus:'MushroomKing',overlord:'Orc_Skull'};
+const MODEL_MAP={grub:'Frog',dart:'Fish',stinger:'Birb',wraith:'BlueDemon',brute:'Orc',hive:'Cactoro',charger:'Dino',spitter:'Alien',leaper:'Bunny',assassin:'Ninja',boss:'Demon',golem:'Yeti',trickster:'Monkroose',shaman:'Tribal',colossus:'MushroomKing',overlord:'Orc_Skull',
+  // biome content (Quaternius "Ultimate Monsters", CC0)
+  bomber:'GreenSpikyBlob',shielder:'Goleling',kiter:'Squidle',burrower:'Armabee',mender:'Mushnub',mote:'PinkBlob',anchor:'Hywirl',revenant:'Ghost',impaler:'OrcEnemy',
+  pyrelord:'Dragon',rimeking:'GolelingEvolved',monarch:'AlpakingEvolved',archon:'Wizard',ossuary:'GhostSkull'};
 const MODELS={};const MODELINFO={};
 function loadModels(){const loader=new GLTFLoader();const names=[...new Set(Object.values(MODEL_MAP))];
   return Promise.all(names.map(n=>loader.loadAsync('/models/'+n+'.glb')
     .then(g=>{MODELS[n]={scene:g.scene,animations:g.animations};})
     .catch(e=>{console.warn('model load failed',n,e);})))
   .then(()=>{for(const type in MODEL_MAP){const M=MODELS[MODEL_MAP[type]];if(!M)continue;
-    const box=new THREE.Box3().setFromObject(M.scene),h=Math.max(.001,box.max.y-box.min.y);
+    // raw bounds match the original pack's exports; fall back to skinned bounds when they disagree wildly
+    const raw=new THREE.Box3().setFromObject(M.scene),sk=modelBox(M.scene);
+    const rawH=Math.max(.001,raw.max.y-raw.min.y),skH=Math.max(.001,sk.max.y-sk.min.y);
+    const box=rawH/skH>3||skH/rawH>3?sk:raw,h=Math.max(.001,box.max.y-box.min.y);
     const target=ETYPE[type].r*2.4;
-    MODELINFO[type]={scale:target/h,headY:target*1.05+(ETYPE[type].cat==='boss'?1.4:0.7),faceOff:0,
-      clip:ETYPE[type].cat==='boss'?'Walk':'Run'};}});}
+    // some packs export the mesh hovering above its origin — sink it so feet touch the ground
+    MODELINFO[type]={scale:target/h,headY:target*1.05+(ETYPE[type].cat==='boss'?1.4:0.7),faceOff:0,yOff:-box.min.y*(target/h),
+      clip:ETYPE[type].clip||(ETYPE[type].cat==='boss'?'Walk':'Run')};}});}
+// bounds of a model AS RENDERED: skinned meshes are measured through their bones (some packs keep the
+// real scale on the armature, so raw geometry bounds can be 100x too large and the auto-fit shrinks the
+// monster to a speck)
+const _mb=new THREE.Box3();
+function modelBox(root){root.updateMatrixWorld(true);const box=new THREE.Box3();
+  root.traverse(o=>{if(!o.isMesh||!o.geometry)return;
+    if(o.isSkinnedMesh&&o.computeBoundingBox){o.computeBoundingBox();_mb.copy(o.boundingBox);}
+    else{if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();_mb.copy(o.geometry.boundingBox);}
+    _mb.applyMatrix4(o.matrixWorld);box.union(_mb);});
+  if(box.isEmpty())box.setFromObject(root);return box;}
+// pick an animation clip by name; the newer packs prefix names with "CharacterArmature|"
+function findClip(anims,want){const byName=n=>anims.find(a=>a.name===n||a.name.endsWith('|'+n));
+  return byName(want)||byName('Run')||byName('Walk')||byName('Fast_Flying')||byName('Flying_Idle')||byName('Idle')||anims[0];}
 function graftModel(g,type){const mi=MODELINFO[type],M=mi&&MODELS[MODEL_MAP[type]];if(!M)return;
-  const inst=skeletonClone(M.scene);inst.scale.setScalar(mi.scale);inst.position.y=0;
-  inst.traverse(o=>{if(o.isMesh){o.castShadow=false;o.frustumCulled=false;}});
+  const inst=skeletonClone(M.scene);inst.scale.setScalar(mi.scale);inst.position.y=mi.yOff||0;
+  const tint=ETYPE[type].tint?new THREE.Color(ETYPE[type].tint):null;
+  inst.traverse(o=>{if(o.isMesh){o.castShadow=false;o.frustumCulled=false;
+    if(tint&&o.material){o.material=o.material.clone();o.material.color.lerp(tint,.65);if(o.material.emissive){o.material.emissive.copy(tint).multiplyScalar(.25);}}}});
   for(const c of g.children)c.visible=false; // hide procedural fallback body
   g.add(inst);
   const mixer=new THREE.AnimationMixer(inst);
-  const clip=M.animations.find(a=>a.name===mi.clip)||M.animations.find(a=>/run|walk|idle/i.test(a.name))||M.animations[0];
+  const clip=findClip(M.animations,mi.clip);
   if(clip){const act=mixer.clipAction(clip);act.play();act.time=Math.random()*(clip.duration||1);}
   g.userData.model=inst;g.userData.mixer=mixer;}
 function poolBuild(type,n){const a=[];for(let i=0;i<n;i++)a.push(buildEnemy(type));return a;}
 let enemyPool={};
-function initEnemyPools(){enemyPool={
-  grub:poolBuild('grub',24),dart:poolBuild('dart',14),stinger:poolBuild('stinger',16),wraith:poolBuild('wraith',16),leaper:poolBuild('leaper',12),
-  brute:poolBuild('brute',10),hive:poolBuild('hive',8),charger:poolBuild('charger',8),spitter:poolBuild('spitter',10),assassin:poolBuild('assassin',8),
-  boss:poolBuild('boss',3),golem:poolBuild('golem',2),trickster:poolBuild('trickster',2),colossus:poolBuild('colossus',2),shaman:poolBuild('shaman',2),overlord:poolBuild('overlord',2),
-};}
+// pool sizes: small mobs need many slots (splitters / summons), bosses only a couple
+const POOL_SIZE={grub:24,dart:14,stinger:16,wraith:16,leaper:12,brute:10,hive:8,charger:8,spitter:10,assassin:8,
+  bomber:12,shielder:8,kiter:10,burrower:8,mender:6,mote:26,anchor:6,revenant:14,impaler:8,
+  boss:3,golem:2,trickster:2,colossus:2,shaman:2,overlord:2,pyrelord:2,rimeking:2,monarch:2,archon:2,ossuary:2};
+function initEnemyPools(){enemyPool={};for(const t in ETYPE)enemyPool[t]=poolBuild(t,POOL_SIZE[t]||6);}
 function poolMesh(geo,mat,n,cast){const a=[];for(let i=0;i<n;i++){const m=new THREE.Mesh(geo,mat);m.visible=false;m.castShadow=!!cast&&!isMobile;scene.add(m);a.push(m);}return a;}
 const geoEbullet=new THREE.SphereGeometry(0.5,10,10);
 const matEbullet=new THREE.MeshStandardMaterial({color:0xC58BFF,emissive:0xB07BFF,emissiveIntensity:2.4,roughness:.4});
@@ -1028,6 +1248,32 @@ const boltMeshes=poolMesh(geoBolt,matBolt,80,false);
 const orbMeshes=poolMesh(geoOrb,matOrb,300,false);
 const coinMeshes=poolMesh(geoCoin,matCoin,70,false);
 const bladeMeshes=poolMesh(geoBlade,matBlade,6,false);
+const bladeMeshes2=poolMesh(geoBlade,new THREE.MeshStandardMaterial({color:0xC9FFF2,emissive:0x3FE0C5,emissiveIntensity:1.9,roughness:.3,flatShading:true}),6,false); // partner's Cinder Ring
+// hearts — rare heal drop from elites (the tips promised them; now they exist)
+const geoHeart=new THREE.SphereGeometry(0.42,10,8);
+const matHeart=new THREE.MeshStandardMaterial({color:0xFF8FB0,emissive:0xFF4F66,emissiveIntensity:2.2,roughness:.3});
+const heartMeshes=poolMesh(geoHeart,matHeart,12,false);
+// Brimstone Mine — a glowing pyramid dropped behind you that detonates when trodden on
+const geoMine=new THREE.ConeGeometry(0.55,0.8,4);
+const matMine=new THREE.MeshStandardMaterial({color:0xFFB13D,emissive:0xFF6A00,emissiveIntensity:2.2,roughness:.4,flatShading:true});
+const mineMeshes=poolMesh(geoMine,matMine,24,false);
+// Kiln Beam — a long thin blade of light that sweeps around its owner
+const geoBeam=new THREE.BoxGeometry(1,0.28,0.34);geoBeam.translate(0.5,0,0);
+const matBeam=new THREE.MeshBasicMaterial({color:0xFFD27A,transparent:true,opacity:.85,depthWrite:false,toneMapped:false,blending:THREE.AdditiveBlending});
+const beamMeshes=poolMesh(geoBeam,matBeam,4,false);
+// immediate-mode indicator rings (shield arcs, heal auras, gravity pulls, fuses) — drawn each frame, hidden when unused
+const geoFxRing=new THREE.RingGeometry(0.86,1,36);
+const fxRings=[];for(let i=0;i<40;i++){const m=new THREE.Mesh(geoFxRing,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.5,side:THREE.DoubleSide,depthWrite:false,toneMapped:false}));m.rotation.x=-Math.PI/2;m.position.y=.09;m.visible=false;scene.add(m);fxRings.push(m);}
+const geoFxArc=new THREE.RingGeometry(0.8,1,24,1,-1.05,2.1);
+const fxArcs=[];for(let i=0;i<16;i++){const m=new THREE.Mesh(geoFxArc,new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.7,side:THREE.DoubleSide,depthWrite:false,toneMapped:false}));m.rotation.x=-Math.PI/2;m.position.y=.1;m.visible=false;scene.add(m);fxArcs.push(m);}
+let fxRingN=0,fxArcN=0;
+function drawRing(x,z,r,col,op,y){if(fxRingN>=fxRings.length)return;const m=fxRings[fxRingN++];m.visible=true;m.position.set(x,y||.09,z);m.scale.set(r,r,1);m.material.color.setHex(col);m.material.opacity=op;}
+function drawArc(x,z,r,ang,col,op){if(fxArcN>=fxArcs.length)return;const m=fxArcs[fxArcN++];m.visible=true;m.position.set(x,.1,z);m.scale.set(r,r,1);m.rotation.z=ang;m.material.color.setHex(col);m.material.opacity=op;}
+function fxFrameEnd(){for(let i=fxRingN;i<fxRings.length;i++)fxRings[i].visible=false;for(let i=fxArcN;i<fxArcs.length;i++)fxArcs[i].visible=false;fxRingN=0;fxArcN=0;}
+// blast pulses (mine detonations, bomber bursts) — expanding rings that fade
+const blastPool=[];for(let i=0;i<8;i++){const m=new THREE.Mesh(new THREE.RingGeometry(0.7,1,40),new THREE.MeshBasicMaterial({color:0xFFB13D,side:THREE.DoubleSide,transparent:true,opacity:0,depthWrite:false,toneMapped:false}));m.rotation.x=-Math.PI/2;m.position.y=.35;m.visible=false;scene.add(m);blastPool.push({m,t:0,max:.35,r:1});}
+function blastFx(x,z,r,col){const b=blastPool.find(o=>o.t<=0)||blastPool[0];b.t=b.max=.35;b.r=r;b.m.position.set(x,.35,z);b.m.material.color.setHex(col||0xFFB13D);b.m.visible=true;}
+function stepBlasts(dt){for(const b of blastPool){if(b.t>0){b.t-=dt;const p=1-b.t/b.max,s=Math.max(.01,b.r*(.3+.7*p));b.m.scale.set(s,s,1);b.m.material.opacity=(1-p)*.85;if(b.t<=0)b.m.visible=false;}}}
 // Frost Lance — an elongated icy spear (distinct from the round Ember Bolt)
 const geoLance=new THREE.CylinderGeometry(0.06,0.16,2.4,7);geoLance.rotateX(Math.PI/2);
 const matLance=new THREE.MeshStandardMaterial({color:0xCFF3FF,emissive:0x4FC8FF,emissiveIntensity:2.6,roughness:.25,metalness:.2});
@@ -1045,6 +1291,9 @@ function lashFx(px,pz,base,arc,range){const f=lashPool.find(o=>o.life<=0)||lashP
   m.position.set(px,1.0,pz);m.material.opacity=.6;m.visible=true;f.life=.18;}
 function stepLashFx(dt){for(const o of lashPool){if(o.life>0){o.life-=dt;o.m.material.opacity=Math.max(0,o.life/.18)*.6;if(o.life<=0)o.m.visible=false;}}}
 const take=arr=>{for(const m of arr)if(!m.visible){m.visible=true;return m;}return null;};
+// enemy groups use an explicit busy flag: a burrowed mob hides its mesh yet still owns its pool slot
+const takeEnemy=arr=>{for(const g of arr)if(!g.userData.busy){g.userData.busy=true;g.visible=true;return g;}return null;};
+const releaseEnemy=g=>{g.userData.busy=false;g.visible=false;g.scale.setScalar(1);if(g.userData.hpbar)g.userData.hpbar.visible=false;};
 
 /* player — model rebuilt per skin so skins change SHAPE, not just colour */
 const player=new THREE.Group();scene.add(player);
@@ -1130,6 +1379,7 @@ function dmgNumber(x,y,z,text,kind){
   slot.life=slot.max=kind==='crit'?.95:.8;slot.x=x;slot.y=y;slot.z=z;slot.vy=rand(7,10);slot.jx=rand(-8,8);
   const el=slot.el;el.textContent=text;
   if(kind==='player'){el.style.color='#FF6376';el.style.fontSize='26px';}
+  else if(kind==='heal'){el.style.color='#7CFF9E';el.style.fontSize='24px';}
   else if(kind==='crit'){el.style.color='#FFD76A';el.style.fontSize='30px';}
   else{el.style.color='#FFE7C2';el.style.fontSize='20px';}
   dnActive.push(slot);
@@ -1163,22 +1413,27 @@ const WEAPONS={
     stat:l=>({dmg:[17,17,25,25,35][l-1],cd:[.9,.8,.72,.62,.52][l-1],speed:[46,46,50,50,54][l-1]})},
   chain:{name:'Spark Chain',max:5,blurb:['Lightning leaps between nearby foes','One more jump','Stronger arcs','Two more jumps','A storm of chains'],
     stat:l=>({dmg:[12,12,17,17,24][l-1],cd:[1.1,1.0,.92,.82,.72][l-1],jumps:[3,4,4,5,6][l-1],range:[9,9,10,10,11][l-1]})},
+  mine:{name:'Brimstone Mine',max:5,blurb:['Drop mines behind you that burst when trodden on','One more mine at a time','Bigger, hotter bursts','Two more mines, dropped faster','A minefield of brimstone'],
+    stat:l=>({cd:[2.2,2.0,1.9,1.6,1.3][l-1],dmg:[24,24,36,36,52][l-1],radius:[4.2,4.6,5.2,5.6,6.6][l-1],max:[3,4,4,6,8][l-1]})},
+  beam:{name:'Kiln Beam',max:5,blurb:['A blade of light sweeps around you','Longer reach','Burns far hotter','A second beam, opposite the first','A searing kiln'],
+    stat:l=>({len:[10,13,13,14,17][l-1],dmg:[5,5,8,8,12][l-1],spin:[1.7,1.7,2.0,2.1,2.5][l-1],n:[1,1,1,2,2][l-1],tick:.22})},
 };
 // shared weapon effects so BOTH players (host + partner) can wield them
 const rollCrit=cc=>cc!=null?Math.random()<cc:undefined; // per-hit crit for the weapon's owner
+// every projectile carries a hit set so it can only damage a given enemy ONCE (pierce = extra targets, not extra hits)
 function doScatter(px,pz,s,mul,critC){for(let i=0;i<s.count;i++){const a=i/s.count*TAU;const bm=take(sparkMeshes);if(!bm)break;
-    bm.visible=true;bm.position.set(px,1.2,pz);ST.bolts.push({mesh:bm,x:px,z:pz,vx:Math.cos(a)*26,vz:Math.sin(a)*26,dmg:s.dmg,pierce:1,life:.95,mul,critC,spin:1});}
-  sfx.shot();}
+    bm.visible=true;bm.position.set(px,1.2,pz);ST.bolts.push({mesh:bm,k:1,x:px,z:pz,vx:Math.cos(a)*26,vz:Math.sin(a)*26,dmg:s.dmg,pierce:1,life:.95,mul,critC,hit:new Set()});}
+  sfx.scatter();}
 function doLash(px,pz,s,mul,dirx,dirz,critC){const base=Math.atan2(dirz,dirx);let hit=false;
-  for(const e of ST.enemies){if(e.dead)continue;const dx=e.x-px,dz=e.z-pz,d=Math.hypot(dx,dz);if(d>s.range+e.r)continue;
+  for(const e of ST.enemies.slice()){if(e.dead||e.invuln)continue;const dx=e.x-px,dz=e.z-pz,d=Math.hypot(dx,dz);if(d>s.range+e.r)continue;
     const ang=Math.atan2(dz,dx),da=Math.abs(((ang-base+Math.PI*3)%TAU)-Math.PI);
     if(da<=s.arc/2){hurtEnemy(e,s.dmg,rollCrit(critC),mul);hit=true;}}
-  lashFx(px,pz,base,s.arc,s.range); // sweeping crescent, not just sparks
-  if(hit){ST.shake=Math.max(ST.shake,.2);sfx.shot();}}
+  lashFx(px,pz,base,s.arc,s.range);netFx(1,px,pz,base,s.arc,s.range); // sweeping crescent, not just sparks
+  if(hit){ST.shake=Math.max(ST.shake,.2);}sfx.lash();}
 function doLance(px,pz,s,mul,dirx,dirz,critC){const d=Math.hypot(dirx,dirz)||1;const bm=take(lanceMeshes);if(!bm)return;
   const ang=Math.atan2(dirx/d,dirz/d);bm.visible=true;bm.position.set(px,1.2,pz);bm.rotation.set(0,ang,0);
-  ST.bolts.push({mesh:bm,x:px,z:pz,vx:dirx/d*s.speed,vz:dirz/d*s.speed,dmg:s.dmg,pierce:99,life:1.3,mul,critC,face:ang});
-  spawnParts(px,1.2,pz,0x8FE9FF,4);sfx.shot();}
+  ST.bolts.push({mesh:bm,k:2,x:px,z:pz,vx:dirx/d*s.speed,vz:dirz/d*s.speed,dmg:s.dmg,pierce:99,life:1.3,mul,critC,face:ang,hit:new Set()});
+  spawnParts(px,1.2,pz,0x8FE9FF,4);sfx.lance();}
 // chain lightning: hop from `start` to the nearest un-hit enemy, up to s.jumps targets
 function doChain(start,px,pz,s,mul,critC){let cur=start;const hit=new Set();let fromx=px,fromz=pz,n=0;
   while(cur&&n<s.jumps){hurtEnemy(cur,s.dmg,rollCrit(critC),mul);hit.add(cur.id);
@@ -1189,9 +1444,34 @@ function doChain(start,px,pz,s,mul,critC){let cur=start;const hit=new Set();let 
     spawnParts(cur.x,1.2,cur.z,0x9FD8FF,3);
     fromx=cur.x;fromz=cur.z;n++;
     let next=null,bd=s.range*s.range;
-    for(const e of ST.enemies){if(e.dead||hit.has(e.id))continue;const dx=e.x-fromx,dz=e.z-fromz,dd=dx*dx+dz*dz;if(dd<bd){bd=dd;next=e;}}
+    for(const e of ST.enemies){if(e.dead||e.invuln||hit.has(e.id))continue;const dx=e.x-fromx,dz=e.z-fromz,dd=dx*dx+dz*dz;if(dd<bd){bd=dd;next=e;}}
     cur=next;}
-  beep(600,.08,'square',.02,-200);}
+  sfx.chain();}
+// Brimstone Mine: P.mines holds live mines; the oldest is recycled when the cap is reached
+function doMine(P,s){P.mines=P.mines||[];while(P.mines.length>=s.max){const old=P.mines.shift();old.mesh.visible=false;}
+  const m=take(mineMeshes);if(!m)return;m.position.set(P.px,.45,P.pz);P.mines.push({mesh:m,x:P.px,z:P.pz,r:s.radius,dmg:s.dmg,arm:.35});}
+function stepMines(P,dt,mul,critC){if(!P.mines||!P.mines.length)return;
+  for(const m of P.mines){m.mesh.rotation.y+=dt*2.5;m.mesh.position.y=.45+Math.sin(ST.t*5)*.08;if(m.arm>0){m.arm-=dt;continue;}
+    let trig=false;for(const e of ST.enemies){if(e.dead||e.invuln)continue;const dx=e.x-m.x,dz=e.z-m.z;if(dx*dx+dz*dz<(1.4+e.r)**2){trig=true;break;}}
+    if(trig){m.done=true;blastFx(m.x,m.z,m.r,0xFFB13D);netFx(2,m.x,m.z,m.r);spawnParts(m.x,.8,m.z,0xFF8A2E,16);ST.shake=Math.max(ST.shake,.3);sfx.mine();
+      for(const e of ST.enemies.slice()){if(e.dead||e.invuln)continue;const dx=e.x-m.x,dz=e.z-m.z;if(dx*dx+dz*dz<(m.r+e.r)**2)hurtEnemy(e,m.dmg,rollCrit(critC),mul);}}}
+  P.mines=P.mines.filter(m=>{if(!m.done)return true;m.mesh.visible=false;return false;});}
+// Kiln Beam: rotating line segments from the owner; enemies near the segment take a tick every s.tick seconds
+function stepBeam(P,s,dt,mul,critC,who){P.beamAng=(P.beamAng||0)+dt*s.spin;P.beamTick=(P.beamTick||0)-dt;const tick=P.beamTick<=0;if(tick)P.beamTick=s.tick;
+  for(let i=0;i<s.n;i++){const a=P.beamAng+i*Math.PI;const bm=beamMeshes[(who===2?2:0)+i];if(!bm)break;bm.visible=true;bm.position.set(P.px,1.15,P.pz);bm.rotation.set(0,-a,0);bm.scale.set(s.len,1+Math.sin(ST.t*30)*.15,1);
+    if(!tick)continue;const cx=Math.cos(a),cz=Math.sin(a);
+    for(const e of ST.enemies){if(e.dead||e.invuln)continue;const dx=e.x-P.px,dz=e.z-P.pz;const t=dx*cx+dz*cz;if(t<0||t>s.len+e.r)continue;
+      const px=dx-cx*t,pz=dz-cz*t;if(px*px+pz*pz<(0.9+e.r)**2){hurtEnemy(e,s.dmg,rollCrit(critC),mul);}}}
+  if(tick&&Math.random()<.35)sfx.beam();}
+function hideBeams(who){const o=who===2?2:0;for(let i=0;i<2;i++)if(beamMeshes[o+i])beamMeshes[o+i].visible=false;}
+function stepOrbit(P,pool,s,dt,mul,critC){P.orbitAng=(P.orbitAng||0)+dt*2.6;
+  for(let i=0;i<pool.length;i++){const bm=pool[i];
+    if(i<s.count){bm.visible=true;const a=P.orbitAng+i*TAU/s.count;const bx=P.px+Math.cos(a)*s.radius,bz=P.pz+Math.sin(a)*s.radius;
+      bm.position.set(bx,1.3,bz);bm.rotation.x+=dt*6;bm.rotation.y+=dt*4;
+      for(const e of ST.enemies){if(e.dead||e.invuln||e.bladeCd>0)continue;const dx=bx-e.x,dz=bz-e.z;if(dx*dx+dz*dz<(1+e.r)**2){hurtEnemy(e,s.dmg,rollCrit(critC),mul);e.bladeCd=.35;}}
+    }else bm.visible=false;}}
+// nearest living, targetable enemy by distance (used for the partner and for weapons that don't need line of sight)
+function nearestWithin(x,z,maxR){let best=null,bd=maxR*maxR;for(const e of ST.enemies){if(e.dead||e.invuln)continue;const dx=x-e.x,dz=z-e.z,d=dx*dx+dz*dz;if(d<bd){bd=d;best=e;}}return best;}
 const PASSIVES={
   speed:{name:'Fleetfoot',max:5,d:'+8% move speed'},magnet:{name:'Drawing Heat',max:5,d:'+30% pickup radius'},
   vigor:{name:'Stoked Heart',max:5,d:'+20 max health, heal 20'},regen:{name:'Banked Coals',max:5,d:'+0.5 health / sec'},
@@ -1201,15 +1481,19 @@ const PASSIVES={
 function newRun(mode,clevel){
   mode=mode||'free';clevel=clevel||1;
   const maxhp=100+15*fr('vit');
+  const ce=mode==='campaign'?campEntry(clevel):null;
   ST={t:0,kills:0,coins:0,level:1,xp:0,xpNext:12,hp:maxhp,maxhp,
     px:0,pz:0,iframe:0,orbitAng:0,shake:0,pendingLU:0,
     speed:17*(1+.04*fr('swift')),dmgMul:1+.06*fr('pow'),cdMul:1,magnet:6*(1+.18*fr('mag')),
     regen:1+.3*fr('mend'),crit:.05,greed:1+.15*fr('greed'),hitFlash:0,bossN:0,outFrac:0,
-    mode,clevel,won:false,coop:false,isHost:false,p2:null,down:false,enemyId:1,
-    cmod:(mode==='campaign'?campEntry(clevel).mod:null),cname:(mode==='campaign'?campEntry(clevel).name:''),
-    weapons:(()=>{const w={};w[START_CHOICES.includes(SAVE.startWeapon)?SAVE.startWeapon:'bolt']=1;return w;})(),passives:{},timers:{bolt:0,nova:0,scatter:0,lash:0,lance:0,chain:0},
+    mode,clevel,won:false,coop:false,wasCoop:false,isHost:false,p2:null,down:false,enemyId:1,
+    cmod:ce?ce.mod:null,cname:ce?ce.name:'',
+    // biome state: which world we're in, how many times free play has looped the cycle, per-hazard cooldowns
+    biome:ce?ce.biome:'ember',loop:0,hazCds:{},slowMul:1,pullX:0,pullZ:0,chillT:0,storm:0,faceX:1,faceZ:0,rising:[],mines:[],beamAng:0,
+    weapons:(()=>{const w={};w[START_CHOICES.includes(SAVE.startWeapon)?SAVE.startWeapon:'bolt']=1;return w;})(),passives:{},timers:{bolt:0,nova:0,scatter:0,lash:0,lance:0,chain:0,mine:0,beam:0},
     wave:0,wlevel:(mode==='campaign'?clevel:1),waveState:'break',waveTimer:2.2,isBossWave:false,spawnQueue:0,batchCd:0,waveRoster:['grub'],bossE:null,telegraphs:[],
-    enemies:[],bolts:[],ebullets:[],orbs:[],coinDrops:[],over:false};
+    enemies:[],bolts:[],ebullets:[],orbs:[],coinDrops:[],hearts:[],over:false};
+  setBiome(ST.biome,false);
 }
 function applyPassives(){const p=ST.passives;
   ST.speed=17*(1+.04*fr('swift'))*(1+.08*(p.speed|0));
@@ -1221,87 +1505,113 @@ function applyPassives(){const p=ST.passives;
 }
 
 /* ============ enemies ============ */
-function hpScale(){return ST.mode==='campaign'?1+(ST.clevel-1)*0.35:1+((ST.wlevel||1)-1)*0.5+Math.min(1.5,ST.t/360);}
-function spawnEnemy(type,fx,fz){
+// Campaign levels are each a fresh level-1 character, so they scale gently by level; free play scales by
+// level AND time (and a little more for two players, who bring twice the DPS).
+function hpScale(){const co=ST.coop?1.3:1;
+  return co*(ST.mode==='campaign'?1+(ST.clevel-1)*0.22+Math.min(.5,ST.t/600):1+((ST.wlevel||1)-1)*0.5+Math.min(1.5,ST.t/360));}
+function dmgScale(){return ST.mode==='campaign'?(1+(ST.clevel-1)*0.07)*(1+Math.min(.5,ST.t/400)):(1+((ST.wlevel||1)-1)*0.10)*(1+Math.min(.7,ST.t/600));}
+function spawnEnemy(type,fx,fz,opts){
   if(ST.enemies.length>=MAXE)return null;
-  const d=ETYPE[type];const g=take(enemyPool[type]);if(!g)return null;
+  const d=ETYPE[type];if(!d)return null;const g=takeEnemy(enemyPool[type]);if(!g)return null;opts=opts||{};
   let x,z;
   if(fx!==undefined){x=clamp(fx,-ARENA,ARENA);z=clamp(fz,-ARENA,ARENA);}
-  else{const a=Math.random()*TAU,dist=rand(46,62);x=clamp(ST.px+Math.cos(a)*dist,-ARENA,ARENA);z=clamp(ST.pz+Math.sin(a)*dist,-ARENA,ARENA);}
+  else{const a=Math.random()*TAU,dist=ST.wave<=3?rand(32,46):rand(46,62);x=clamp(ST.px+Math.cos(a)*dist,-ARENA,ARENA);z=clamp(ST.pz+Math.sin(a)*dist,-ARENA,ARENA);}
   const m=ST.t/60;
   let hp=isBossType(type)
-    ? d.hp*(1+((ST.wlevel||1)-1)*0.45)*(1+Math.min(.6,m*0.03))
+    ? (ST.mode==='campaign'?d.hp*(1+(ST.clevel-1)*0.2):d.hp*(1+((ST.wlevel||1)-1)*0.45)*(1+Math.min(.6,m*0.03)))*(ST.coop?1.35:1)
     : d.hp*hpScale();
   // campaign modifiers: elite = fewer but tougher, fast = quicker
   let spM=1;
-  if(ST.cmod==='elite'&&!isBossType(type)){hp*=1.45;spM=0.95;}
-  else if(ST.cmod==='fast'){spM=1.28;}
-  const e={id:ST.enemyId++,type,g,x,z,r:d.r,y:d.y,hp,maxhp:hp,dmg:d.dmg*(1+((ST.wlevel||1)-1)*0.14)*(1+Math.min(1.0,ST.t/520)),
-    spd:d.spd*spM*(1+Math.min(.8,ST.t/60*.05))*rand(.9,1.1),xp:d.xp,hitCd:0,bladeCd:0,ph:Math.random()*TAU,flash:0,
-    behavior:d.behavior,shootCd:rand(1.4,3),chargeCd:rand(2,4),dashT:0,summonCd:5};
-  g.visible=true;g.userData.hpbar.visible=true;g.position.set(x,d.y,z);g.scale.setScalar(1);
+  if(ST.cmod==='elite'&&!isBossType(type)){hp*=1.35;spM=0.95;}
+  else if(ST.cmod==='fast'){spM=1.22;}
+  if(opts.hpMul)hp*=opts.hpMul;
+  // chasers never outrun the player outright (dashes/leaps are separate, fixed-speed moves)
+  let spd=d.spd*spM*(1+Math.min(.45,m*.04))*rand(.9,1.1);
+  if(!isBossType(type))spd=Math.min(spd,ST.speed*0.97);
+  const e={id:ST.enemyId++,type,g,x,z,r:d.r*(opts.sc||1),y:d.y,hp,maxhp:hp,dmg:d.dmg*dmgScale()*(opts.dmgMul||1),
+    spd,xp:d.xp,hitCd:0.25,bladeCd:0,ph:Math.random()*TAU,flash:0,sc:opts.sc||1,gen:opts.gen||0,invuln:false,
+    behavior:d.behavior,shootCd:rand(1.4,3),chargeCd:rand(2,4),dashT:0,summonCd:5,st:0,queue:null};
+  if(opts.risen)e.risen=true;
+  g.visible=true;g.userData.hpbar.visible=true;g.position.set(x,d.y,z);g.scale.setScalar(e.sc);
+  if(g.userData.model)g.userData.model.visible=true;
   ST.enemies.push(e);return e;
 }
+// remove an enemy without rewarding it (board sweeps at wave end)
+function despawnEnemy(e){if(e.dead)return;e.dead=true;releaseEnemy(e.g);}
 const unlockedOf=cat=>{const now=ST.t,out=[];for(const k in ETYPE)if(ETYPE[k].cat===cat&&ETYPE[k].from<=now)out.push(k);return out;};
 const pickOne=arr=>arr[Math.floor(Math.random()*arr.length)];
 
 /* ---- wave / level director ---- */
-const BOSS_ORDER=['boss','golem','trickster','colossus','shaman','overlord'];
-// Named campaign levels with a distinct twist each, so it isn't the same fight every time.
-// mod: swarm=more, smaller mobs · fast=quicker mobs · elite=fewer but tougher · null=straight fight
+const BOSS_ORDER=['boss','golem','trickster','colossus','shaman','overlord']; // classic progression (kept for reference/tools)
+/* Campaign: five biome chapters of three named levels each. The last level of a chapter is its finale,
+   fought against that biome's new boss. mod: swarm=more, smaller mobs · fast=quicker · elite=fewer but
+   tougher · null=straight fight. Level numbers are stable so SAVE.campaign.unlocked keeps meaning. */
 const CAMPAIGN=[
-  {name:'Ember Dawn',    boss:'boss',     mod:null,   tip:'The swarm wakes.'},
-  {name:'Rising Tide',   boss:'boss',     mod:'swarm', tip:'They come in numbers.'},
-  {name:'Frost Reach',   boss:'golem',    mod:'fast',  tip:'Everything moves quicker.'},
-  {name:'Glacier Maw',   boss:'golem',    mod:'elite', tip:'Fewer foes, far tougher.'},
-  {name:'Hall of Mirrors',boss:'trickster',mod:'swarm',tip:'The Trickster blinks and multiplies.'},
-  {name:'Sleight of Hand',boss:'trickster',mod:'fast', tip:'Blink-hunters close fast.'},
-  {name:'Spore Fields',  boss:'colossus', mod:'swarm', tip:'Mind the puddles.'},
-  {name:'Fungal Deep',   boss:'colossus', mod:'elite', tip:'Elites guard the King.'},
-  {name:'Bone Totems',   boss:'shaman',   mod:'fast',  tip:'Totems raise ranged casters.'},
-  {name:'Cursed Grove',  boss:'shaman',   mod:'elite', tip:'Heavy hitters only.'},
-  {name:'Void Gate',     boss:'overlord', mod:'fast',  tip:'Bullet-hell, at speed.'},
-  {name:'The Overlord',  boss:'overlord', mod:'elite', tip:'The final trial.'},
+  {name:'Ember Dawn',      biome:'ember',  boss:'boss',     mod:null,   tip:'The swarm wakes.'},
+  {name:'Rising Tide',     biome:'ember',  boss:'boss',     mod:'swarm',tip:'They come in numbers.'},
+  {name:'The Pyre',        biome:'ember',  boss:'pyrelord', mod:null,   tip:'Something old stirs in the cinders.'},
+  {name:'Frost Reach',     biome:'frost',  boss:'golem',    mod:'fast', tip:'Everything moves quicker on ice.'},
+  {name:'Glacier Maw',     biome:'frost',  boss:'golem',    mod:'elite',tip:'Fewer foes, far tougher.'},
+  {name:'The Rime Throne', biome:'frost',  boss:'rimeking', mod:null,   tip:'The cold has a king.'},
+  {name:'Spore Fields',    biome:'verdant',boss:'colossus', mod:'swarm',tip:'Mind the puddles.'},
+  {name:'Fungal Deep',     biome:'verdant',boss:'colossus', mod:'elite',tip:'Elites guard the King.'},
+  {name:'Heart of the Hollow',biome:'verdant',boss:'monarch',mod:null,  tip:'The canopy answers to one voice.'},
+  {name:'Hall of Mirrors', biome:'void',   boss:'trickster',mod:'swarm',tip:'The Trickster blinks and multiplies.'},
+  {name:'Void Gate',       biome:'void',   boss:'overlord', mod:'fast', tip:'Bullet-hell, at speed.'},
+  {name:'The Spire',       biome:'void',   boss:'archon',   mod:null,   tip:'Gravity is a weapon here.'},
+  {name:'Bone Totems',     biome:'bone',   boss:'shaman',   mod:'fast', tip:'Totems raise ranged casters.'},
+  {name:'Ossuary Road',    biome:'bone',   boss:'shaman',   mod:'elite',tip:'The dead walk it twice.'},
+  {name:'The Ossuary King',biome:'bone',   boss:'ossuary',  mod:null,   tip:'The final trial.'},
 ];
-function campEntry(lv){const base=CAMPAIGN[Math.min(lv,CAMPAIGN.length)-1];
-  if(lv<=CAMPAIGN.length)return base;
-  // past the authored levels: keep cycling the endgame with escalating names
-  const b=BOSS_ORDER[(lv-1)%BOSS_ORDER.length];return {name:'Abyss '+(lv-CAMPAIGN.length),boss:b,mod:(lv%2?'fast':'elite'),tip:'The swarm never ends.'};}
-function rosterForLevel(lv){const r=['grub','dart'];
-  if(lv>=2)r.push('stinger','brute','leaper');
-  if(lv>=3)r.push('wraith','hive','charger');
-  if(lv>=4)r.push('spitter','assassin');
-  return r;}
-function waveCount(wave,lv){return Math.min(40,6+wave*2+lv*3);}
-function bannerMsg(txt,sub){const b=$('centerBanner');if(!b)return;b.querySelector('.cb-t').textContent=txt;b.querySelector('.cb-s').textContent=sub||'';
-  b.classList.remove('show');void b.offsetWidth;b.classList.add('show');}
+function campEntry(lv){if(lv<=CAMPAIGN.length)return CAMPAIGN[lv-1];
+  // past the authored levels: keep cycling the biomes with escalating names, alternating each biome's bosses
+  const n=lv-CAMPAIGN.length,bi=BIOME_ORDER[(n-1)%BIOME_ORDER.length],bs=BIOMES[bi].bosses;
+  return {name:'Abyss '+n,biome:bi,boss:bs[Math.floor((n-1)/BIOME_ORDER.length)%bs.length],mod:(n%2?'fast':'elite'),tip:'The swarm never ends.'};}
+// how deep into a biome we are (1..3): unlocks the later rows of its roster
+function biomeTier(){if(ST.mode==='campaign'){if(ST.clevel>CAMPAIGN.length)return 3;const ce=CAMPAIGN[ST.clevel-1];let k=0;for(let i=0;i<=ST.clevel-1;i++)if(CAMPAIGN[i].biome===ce.biome)k++;return Math.min(3,k);}
+  return clamp(1+Math.floor((ST.wlevel-1)/2)+ST.loop,1,3);}
+function rosterForLevel(){const b=biomeById(ST.biome),tier=biomeTier();const r=b.roster.filter(row=>row[1]<=tier).map(row=>row[0]);return r.length?r:['grub'];}
+function waveCount(wave,lv){const base=ST.mode==='campaign'?6+wave*2+Math.min(lv,6)*2:6+wave*2+lv*3;return Math.min(40,Math.floor(base*(ST.coop?1.4:1)));}
+function bannerMsg(txt,sub,cls){const b=$('centerBanner');if(!b)return;b.querySelector('.cb-t').textContent=txt;b.querySelector('.cb-s').textContent=sub||'';
+  b.classList.remove('show');b.classList.toggle('biome',cls==='biome');void b.offsetWidth;b.classList.add('show');}
+// shared wave-boss setup (used by startWave and the __spawnBoss test hook)
+function initWaveBoss(b){b.isWaveBoss=true;b.atkSeq=0;b.spd*=0.85;b.queue=[];b.enraged=false;ST.bossE=b;
+  // scale the boss to the players' current power so a strong build meets a tougher boss (co-op: the stronger player)
+  let pw=playerPower(ST);if(ST.coop&&ST.p2)pw=Math.max(pw,playerPower(ST.p2));
+  const sc=clamp(1+(pw-1)*0.28,1,2.8);
+  b.maxhp*=sc;b.hp=b.maxhp;b.dmg*=1+Math.min(1.1,(pw-1)*0.12);b.atkBase=Math.max(1.5,2.5-(pw-1)*0.3);b.atkCd=b.atkBase;
+  b.keep=(b.type==='colossus'||b.type==='overlord'||b.type==='archon'||b.type==='rimeking')?b.r+12:b.r+4; // ring casters keep their distance
+}
 function startWave(){
   ST.wave++;
   if(ST.mode==='campaign'){ST.wlevel=ST.clevel;ST.isBossWave=(ST.wave===5);}   // 4 waves + boss = one level
-  else{ST.wlevel=Math.floor((ST.wave-1)/5)+1;ST.isBossWave=(ST.wave%5===0);}
+  else{ST.wlevel=Math.floor((ST.wave-1)/5)+1;ST.loop=Math.floor((ST.wlevel-1)/BIOME_ORDER.length);ST.isBossWave=(ST.wave%5===0);}
   ST.waveState='active';
   if(ST.isBossWave){
-    const btype=ST.mode==='campaign'?campEntry(ST.clevel).boss:BOSS_ORDER[Math.min(ST.wlevel-1,BOSS_ORDER.length-1)];
+    const bs=biomeById(ST.biome).bosses;
+    const btype=ST.mode==='campaign'?campEntry(ST.clevel).boss:bs[ST.loop%bs.length];
     const b=spawnEnemy(btype);
-    if(b){b.isWaveBoss=true;b.atkSeq=0;b.spd*=0.85;ST.bossE=b;
-      // scale the boss to the player's current power so a strong build meets a tougher boss
-      const pw=playerPower(),sc=clamp(1+(pw-1)*0.28,1,2.8);
-      b.maxhp*=sc;b.hp=b.maxhp;b.dmg*=1+Math.min(1.1,(pw-1)*0.12);b.atkCd=Math.max(1.6,2.6-(pw-1)*0.32);
-      beep(64,.6,'sawtooth',.08,-24);bannerMsg('BOSS',ETYPE[btype].name);showBossBar(b);ST.shake=Math.max(ST.shake,.7);}
+    if(b){initWaveBoss(b);beep(64,.6,'sawtooth',.08,-24);bannerMsg('BOSS',ETYPE[btype].name);showBossBar(b);ST.shake=Math.max(ST.shake,.7);}
   }else{
-    let roster=rosterForLevel(ST.wlevel),cnt=waveCount(ST.wave,ST.wlevel);
-    if(ST.cmod==='swarm'){roster=roster.concat(['grub','dart','leaper']);cnt=Math.floor(cnt*1.5);}
+    let roster=rosterForLevel(),cnt=waveCount(ST.wave,ST.wlevel);
+    if(ST.cmod==='swarm'){roster=roster.concat(roster.filter(t=>ETYPE[t].cat==='small'));cnt=Math.floor(cnt*1.5);}
     else if(ST.cmod==='elite'){cnt=Math.max(3,Math.floor(cnt*0.6));}
     ST.waveRoster=roster;ST.spawnQueue=cnt;ST.batchCd=0;hideBossBar();
-    bannerMsg('WAVE '+ST.wave,ST.mode==='campaign'?ST.cname:('Level '+ST.wlevel));}
+    bannerMsg('WAVE '+ST.wave,ST.mode==='campaign'?ST.cname:(biomeById(ST.biome).name+' · Level '+ST.wlevel));}
 }
+// free play: the world changes every level (5 waves) — announced during the post-boss break
+function nextBiomeFree(){const nl=ST.wlevel+1,nb=BIOME_ORDER[(nl-1)%BIOME_ORDER.length];if(nb===ST.biome)return;
+  ST.biome=nb;ST.hazCds={};setBiome(nb,true);const b=BIOMES[nb];
+  setTimeout(()=>{if(ST&&!ST.over){bannerMsg(b.name,'Biome '+(BIOME_ORDER.indexOf(nb)+1)+' · '+b.tag,'biome');sfx.biome(BIOME_ORDER.indexOf(nb));}},600);}
 function clearWave(){
-  if(ST.isBossWave){for(const e of ST.enemies)if(!e.dead)killEnemy(e);ST.bossE=null;hideBossBar();}
+  if(ST.isBossWave){for(const e of ST.enemies)if(!e.dead)despawnEnemy(e);ST.bossE=null;hideBossBar();}
+  ST.rising.length=0;
   ST.waveState='break';ST.waveTimer=ST.isBossWave?9:7;
   const bonus=Math.floor((10+ST.wave*4)*ST.greed);ST.coins+=bonus;
   toast('Wave '+ST.wave+' cleared',ST.isBossWave?('◆ Level '+ST.wlevel+' complete · +'+bonus+' ember'):'+'+bonus+' ember','teal');
   if(ST.coop){if(ST.down){ST.down=false;ST.hp=Math.ceil(ST.maxhp*0.5);toast('Revived!','Back in the fight','teal');}if(ST.p2&&ST.p2.down){ST.p2.down=false;ST.p2.hp=Math.ceil(ST.p2.maxhp*0.5);}}
   clearTelegraphs();
+  if(ST.isBossWave&&ST.mode!=='campaign')nextBiomeFree();
 }
 function waveManager(dt){
   if(ST.waveState==='break'){ST.waveTimer-=dt;if(ST.waveTimer<=0)startWave();return;}
@@ -1309,68 +1619,155 @@ function waveManager(dt){
   if(ST.isBossWave){ if(!ST.bossE||ST.bossE.dead){ if(ST.mode==='campaign')return winCampaign(); clearWave(); } return; }
   // normal wave: spawn in paced batches, then clear when board is empty
   if(ST.spawnQueue>0){ST.batchCd-=dt;
-    if(ST.batchCd<=0){ST.batchCd=1.15;const n=Math.min(ST.spawnQueue,3+ST.wlevel);
+    if(ST.batchCd<=0){ST.batchCd=1.15;const n=Math.min(ST.spawnQueue,3+Math.min(ST.wlevel,8));
       for(let i=0;i<n;i++){if(spawnEnemy(pickOne(ST.waveRoster)))ST.spawnQueue--;else break;}}}
-  if(ST.spawnQueue<=0&&ST.enemies.length===0)clearWave();
+  if(ST.spawnQueue<=0&&ST.enemies.length===0&&!ST.rising.length)clearWave();
 }
-/* ---- boss special attacks + telegraphs ---- */
-// filled disc (radius 1) so the visible danger area === the damage radius exactly
-const teleMeshes=[];for(let i=0;i<16;i++){const m=new THREE.Mesh(new THREE.CircleGeometry(1,48),new THREE.MeshBasicMaterial({color:0xFF4F66,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false,toneMapped:false}));m.rotation.x=-Math.PI/2;m.position.y=0.07;scene.add(m);teleMeshes.push(m);}
-function clearTelegraphs(){for(const m of teleMeshes)m.material.opacity=0;if(ST)ST.telegraphs.length=0;}
-function addTelegraph(x,z,r,delay,dmg){const mesh=teleMeshes.find(m=>m.material.opacity<=0)||teleMeshes[0];mesh.material.color.setHex(0xFF4F66);
-  ST.telegraphs.push({x,z,r,t:delay,max:delay,dmg,mesh,done:false});}
-function puddle(x,z,r,dur,dmg){const mesh=teleMeshes.find(m=>m.material.opacity<=0)||teleMeshes[0];mesh.material.color.setHex(0x7CFF3D);
-  ST.telegraphs.push({x,z,r,t:dur,max:dur,dmg,mesh,done:false,linger:true,tickCd:.3});}
-function updateTelegraphs(dt){for(const tg of ST.telegraphs){tg.t-=dt;tg.mesh.position.set(tg.x,0.07,tg.z);tg.mesh.scale.set(tg.r,tg.r,tg.r);
-    if(tg.linger){tg.mesh.material.opacity=.35+.12*Math.sin(ST.t*10);
-      tg.tickCd-=dt;if(tg.tickCd<=0){tg.tickCd=.4;aoeHit(tg.x,tg.z,tg.r,tg.dmg);}
+/* ---- telegraphs: filled discs / annuli so the visible danger area === the damage area exactly ----
+   Meshes are claimed the moment a telegraph is created (a "busy" flag, not opacity), the pool grows on demand
+   up to TELE_MAX, and if it is exhausted the telegraph is simply not created: never invisible damage. */
+const teleMeshes=[];const TELE_MAX=56;
+const TELE_COL=[0xFF4F66,0x7CFF3D,0xBFE6FF,0xC58BFF,0xFF7A2E,0xFF4F66,0xEDE4D0]; // red disc, spore, chill, pull, lava, ring, bone mark
+function newTeleMesh(ring){const m=new THREE.Mesh(ring?new THREE.RingGeometry(.5,1,48):new THREE.CircleGeometry(1,48),
+  new THREE.MeshBasicMaterial({color:0xFF4F66,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false,toneMapped:false}));
+  m.rotation.x=-Math.PI/2;m.position.y=0.07;m.visible=false;m.userData.ring=!!ring;m.userData.busy=false;scene.add(m);teleMeshes.push(m);return m;}
+function getTeleMesh(ring,ratio){ring=!!ring;let m=teleMeshes.find(m=>!m.userData.busy&&m.userData.ring===ring);
+  if(!m){if(teleMeshes.length>=TELE_MAX)return null;m=newTeleMesh(ring);}
+  if(ring){m.geometry.dispose();m.geometry=new THREE.RingGeometry(clamp(ratio,.05,.95),1,48);}
+  m.userData.busy=true;m.visible=true;m.material.opacity=.01;return m;}
+function releaseTele(m){if(!m)return;m.userData.busy=false;m.visible=false;m.material.opacity=0;}
+function clearTelegraphs(){for(const m of teleMeshes)releaseTele(m);if(ST)ST.telegraphs.length=0;}
+function addTelegraph(x,z,r,delay,dmg,kind){kind=kind||0;const mesh=getTeleMesh(false);if(!mesh)return null;mesh.material.color.setHex(TELE_COL[kind]);
+  const tg={x,z,r,rIn:0,t:delay,max:delay,dmg,mesh,done:false,kind};ST.telegraphs.push(tg);return tg;}
+// annulus: damage only between rIn and rOut — "stand close or stand far"
+function addRingTelegraph(x,z,rIn,rOut,delay,dmg){const mesh=getTeleMesh(true,rIn/rOut);if(!mesh)return null;mesh.material.color.setHex(TELE_COL[5]);
+  const tg={x,z,r:rOut,rIn,t:delay,max:delay,dmg,mesh,done:false,kind:5};ST.telegraphs.push(tg);return tg;}
+// lingering zone. opts: kind (colour), effect: 'slow' | 'pull' | null, vx/vz drift, arm = grace before the first tick
+function puddle(x,z,r,dur,dmg,opts){opts=opts||{};const kind=opts.kind==null?1:opts.kind;const mesh=getTeleMesh(false);if(!mesh)return null;mesh.material.color.setHex(TELE_COL[kind]);
+  const tg={x,z,r,rIn:0,t:dur,max:dur,dmg:dmg||0,mesh,done:false,linger:true,tickCd:opts.arm==null?.9:opts.arm,kind,effect:opts.effect||null,vx:opts.vx||0,vz:opts.vz||0,force:opts.force||6};
+  ST.telegraphs.push(tg);return tg;}
+// pick a puddle centre that isn't right under a player (a zone that lands on you is not dodgeable)
+function safeSpot(cx,cz,spread,r){for(let k=0;k<8;k++){const x=cx+rand(-spread,spread),z=cz+rand(-spread,spread);
+  if((x-ST.px)**2+(z-ST.pz)**2<(r+2)**2)continue;if(ST.coop&&ST.p2&&(x-ST.p2.px)**2+(z-ST.p2.pz)**2<(r+2)**2)continue;return [x,z];}
+  const a=Math.random()*TAU;return [cx+Math.cos(a)*(r+4),cz+Math.sin(a)*(r+4)];}
+const inRing=(px,pz,tg)=>{const d2=(px-tg.x)**2+(pz-tg.z)**2;return d2<tg.r*tg.r&&d2>=tg.rIn*tg.rIn;};
+function updateTelegraphs(dt){ST.slowMul=1;ST.pullX=0;ST.pullZ=0;const p2=ST.coop&&ST.p2?ST.p2:null;if(p2){p2.slowMul=1;p2.pullX=0;p2.pullZ=0;}
+  for(const tg of ST.telegraphs){tg.t-=dt;if(tg.vx||tg.vz){tg.x+=tg.vx*dt;tg.z+=tg.vz*dt;}
+    tg.mesh.position.set(tg.x,0.07,tg.z);tg.mesh.scale.set(tg.r,tg.r,1);
+    if(tg.linger){const arming=tg.tickCd>0&&tg.dmg>0&&tg.max-tg.t<.9;tg.mesh.material.opacity=(arming?.18:.34)+.1*Math.sin(ST.t*10);
+      // zone effects apply to whichever player stands inside
+      if(tg.effect){for(const P of [ST,p2]){if(!P||P.down)continue;const px=P.px,pz=P.pz;if(!inRing(px,pz,tg))continue;
+        if(tg.effect==='slow')P.slowMul=Math.min(P.slowMul,.55);
+        else if(tg.effect==='pull'){const dx=tg.x-px,dz=tg.z-pz,d=Math.hypot(dx,dz)||1;P.pullX+=dx/d*tg.force;P.pullZ+=dz/d*tg.force;}}}
+      if(tg.dmg>0){tg.tickCd-=dt;if(tg.tickCd<=0){tg.tickCd=.4;aoeHit(tg.x,tg.z,tg.r,tg.dmg,tg.rIn);}}
       if(tg.t<=0)tg.done=true;
     }else{const p=1-Math.max(0,tg.t)/tg.max;tg.mesh.material.opacity=.25+.5*p;
-      if(tg.t<=0&&!tg.done){tg.done=true;spawnParts(tg.x,0.6,tg.z,0xFF4F66,18);ST.shake=Math.max(ST.shake,.45);beep(90,.25,'sawtooth',.06,-40);
-        aoeHit(tg.x,tg.z,tg.r,tg.dmg);}}}
-  ST.telegraphs=ST.telegraphs.filter(tg=>{if(!tg.done)return true;tg.mesh.material.opacity=0;return false;});}
+      if(tg.t<=0&&!tg.done){tg.done=true;spawnParts(tg.x,0.6,tg.z,TELE_COL[tg.kind]||0xFF4F66,tg.kind===5?30:18);ST.shake=Math.max(ST.shake,.45);beep(90,.25,'sawtooth',.06,-40);
+        aoeHit(tg.x,tg.z,tg.r,tg.dmg,tg.rIn);if(tg.after)tg.after(tg);}}}
+  ST.telegraphs=ST.telegraphs.filter(tg=>{if(!tg.done)return true;releaseTele(tg.mesh);return false;});}
 /* projectile + summon helpers */
-function fireShot(e,nx,nz,dmg,sp){const mesh=take(ebulletMeshes);if(!mesh)return;sp=sp||22;
-  mesh.position.set(e.x,e.y,e.z);ST.ebullets.push({mesh,x:e.x,y:e.y,z:e.z,vx:nx*sp,vz:nz*sp,life:3.6,dmg});}
+function fireShot(e,nx,nz,dmg,sp,opts){const mesh=take(ebulletMeshes);if(!mesh)return;sp=sp||22;opts=opts||{};
+  mesh.position.set(e.x,e.y,e.z);mesh.scale.setScalar(opts.big?1.6:1);ST.ebullets.push({mesh,x:e.x,y:e.y,z:e.z,vx:nx*sp,vz:nz*sp,life:3.6,dmg,chill:opts.chill||0});}
 function radialVolley(e,n,dmg,off){off=off||0;for(let i=0;i<n;i++){const a=i/n*TAU+off;fireShot(e,Math.cos(a),Math.sin(a),dmg);}beep(240,.14,'square',.03,-90);}
 function coneVolley(e,nx,nz,spread,n,dmg){const base=Math.atan2(nz,nx);for(let i=0;i<n;i++){const a=base+(i-(n-1)/2)*(spread/Math.max(1,n-1));fireShot(e,Math.cos(a),Math.sin(a),dmg);}beep(300,.12,'square',.025,-110);}
-function summonAdds(e,type,count){const list=unlockedOf('small');for(let i=0;i<count;i++){const t=(type&&ETYPE[type])?type:pickOne(list.length?list:['grub']);const s=spawnEnemy(t,e.x+rand(-7,7),e.z+rand(-7,7));if(s)s.summoned=true;}beep(170,.2,'sine',.04,120);}
-/* per-boss unique attack sets */
-function bossAttack(e){const dx=ST.px-e.x,dz=ST.pz-e.z,dd=Math.hypot(dx,dz)||1,nx=dx/dd,nz=dz/dd,seq=e.atkSeq++,dm=e.dmg;
-  if(e.type==='boss'){        // WARDEN — agile bruiser: charge / lunge-slam / spread
-    const a=seq%3;
-    if(a===0){e.dashT=.9;e.ddx=nx;e.ddz=nz;beep(150,.2,'sawtooth',.05,-60);}
-    else if(a===1){addTelegraph(ST.px,ST.pz,e.r*2.2,.9,dm*1.5);addTelegraph(ST.px+nx*11,ST.pz+nz*11,e.r*1.9,1.2,dm*1.3);}
-    else coneVolley(e,nx,nz,1.0,5,dm*.5);
-  }else if(e.type==='golem'){  // YETI — slow siege: marching slams / quake + ring
-    const a=seq%2;
-    if(a===0){for(let i=1;i<=4;i++)addTelegraph(e.x+nx*i*6.5,e.z+nz*i*6.5,4.6,.45+i*.28,dm*1.4);}
-    else{addTelegraph(ST.px,ST.pz,e.r*3,1.25,dm*1.9);radialVolley(e,8,dm*.45);}
-  }else if(e.type==='colossus'){ // MUSHROOM KING — zoner: summon / spore puddles / burst
-    const a=seq%3;
-    if(a===0)summonAdds(e,'wraith',3);
-    else if(a===1){for(let i=0;i<3;i++)puddle(ST.px+rand(-11,11),ST.pz+rand(-11,11),5,4,dm*.4);}
-    else radialVolley(e,14,dm*.42,seq*0.4);
-  }else if(e.type==='trickster'){ // MONKROOSE — blink + spiral + leapers
-    const a=seq%3;
-    if(a===0){spawnParts(e.x,1,e.z,0x9D5CFF,20);e.x=ST.px+rand(-9,9);e.z=ST.pz+rand(-9,9);spawnParts(e.x,1,e.z,0x9D5CFF,20);radialVolley(e,12,dm*.4);}
-    else if(a===1)spiralVolley(e,18,dm*.4);
-    else summonAdds(e,'leaper',3);
-  }else if(e.type==='shaman'){ // TRIBAL — totems + cross slam + puddles
-    const a=seq%3;
-    if(a===0){for(let i=0;i<2;i++){const t=spawnEnemy('spitter',e.x+rand(-9,9),e.z+rand(-9,9));if(t){t.summoned=true;t.spd=0;t.behavior='range';}}}
-    else if(a===1)crossSlam(e,dm*1.3);
-    else{for(let i=0;i<4;i++)puddle(ST.px+rand(-12,12),ST.pz+rand(-12,12),5,4,dm*.4);radialVolley(e,10,dm*.4);}
-  }else{                       // OVERLORD — bullet-hell caster (hardest): double ring / wide cone / summon+slam
-    const a=seq%3;
-    if(a===0){radialVolley(e,16,dm*.42,seq*0.25);radialVolley(e,16,dm*.42,seq*0.25+TAU/32);}
-    else if(a===1)coneVolley(e,nx,nz,1.4,9,dm*.45);
-    else{summonAdds(e,'assassin',2);addTelegraph(ST.px,ST.pz,e.r*2.4,1,dm*1.6);}
-  }}
+function summonAdds(e,type,count){const list=rosterForLevel().filter(t=>ETYPE[t].cat==='small');for(let i=0;i<count;i++){const t=(type&&ETYPE[type])?type:pickOne(list.length?list:['grub']);const s=spawnEnemy(t,e.x+rand(-7,7),e.z+rand(-7,7));if(s)s.summoned=true;}beep(170,.2,'sine',.04,120);}
 function spiralVolley(e,n,dmg){for(let i=0;i<n;i++){const a=i*0.55;fireShot(e,Math.cos(a),Math.sin(a),dmg,18+i*0.7);}beep(300,.2,'square',.03,-70);}
-function crossSlam(e,dmg){const cx=ST.px,cz=ST.pz;for(const d of [[1,0],[-1,0],[0,1],[0,-1]])for(let k=1;k<=3;k++)addTelegraph(cx+d[0]*k*5,cz+d[1]*k*5,3.4,.45+k*.22,dmg);}
-function playerPower(){let wl=0;for(const w in ST.weapons)wl+=ST.weapons[w];let pl=0;for(const p in ST.passives)pl+=ST.passives[p];
-  return ST.dmgMul*(1+wl*0.10)*(1+pl*0.05)/Math.max(0.55,ST.cdMul);}
+function crossSlam(e,dmg,cx,cz,rot){rot=rot||0;for(const d of [[1,0],[-1,0],[0,1],[0,-1]]){const c=Math.cos(rot),s=Math.sin(rot),dx=d[0]*c-d[1]*s,dz=d[0]*s+d[1]*c;
+  for(let k=1;k<=3;k++)addTelegraph(cx+dx*k*5,cz+dz*k*5,3.4,.45+k*.22,dmg);}}
+// a line of discs marching from (x,z) along (nx,nz) — used for charges, vines and avalanches
+function lineSlam(x,z,nx,nz,n,step,r,delay0,dstep,dmg){for(let i=1;i<=n;i++)addTelegraph(x+nx*i*step,z+nz*i*step,r,delay0+i*dstep,dmg);}
+// a boss can queue follow-up actions (stepped in update) so multi-part attacks read as one deliberate combo
+function bossQueue(e,delay,fn){(e.queue||(e.queue=[])).push({t:delay,fn});}
+function stepBossQueue(e,dt){if(!e.queue||!e.queue.length)return;for(const q of e.queue){q.t-=dt;if(q.t<=0&&!q.done){q.done=true;if(!e.dead)q.fn();}}e.queue=e.queue.filter(q=>!q.done);}
+// blink the boss to a spot near the target but never right on top of them (min distance so the follow-up is dodgeable)
+function bossBlink(e,tx,tz,minD,maxD){spawnParts(e.x,1,e.z,0x9D5CFF,20);const a=Math.random()*TAU,dd=rand(minD,maxD);e.x=clamp(tx+Math.cos(a)*dd,-ARENA,ARENA);e.z=clamp(tz+Math.sin(a)*dd,-ARENA,ARENA);spawnParts(e.x,1,e.z,0x9D5CFF,20);e.hitCd=Math.max(e.hitCd,.7);}
+/* ---- per-boss attack kits. c = {tx,tz (target player), nx,nz (unit dir to it), d, dm (boss dmg), seq} ---- */
+const BOSS_KITS={
+  boss(e,c){        // WARDEN — agile bruiser: telegraphed charge / lunge-slam / spread
+    const a=c.seq%3,dm=c.dm;
+    if(a===0){lineSlam(e.x,e.z,c.nx,c.nz,3,6,2.6,.5,.06,dm*.9);e.windup=.55;bossQueue(e,.55,()=>{e.dashT=.8;e.ddx=c.nx;e.ddz=c.nz;e.hitCd=.2;beep(150,.2,'sawtooth',.05,-60);});}
+    else if(a===1){addTelegraph(c.tx,c.tz,e.r*2.2,.9,dm*1.5);addTelegraph(c.tx+c.nx*11,c.tz+c.nz*11,e.r*1.9,1.2,dm*1.3);}
+    else coneVolley(e,c.nx,c.nz,1.3,5,dm*.5);},
+  golem(e,c){       // YETI — slow siege: marching slams / quake + ring
+    const a=c.seq%2,dm=c.dm;
+    if(a===0)lineSlam(e.x,e.z,c.nx,c.nz,4,6.5,4.6,.45,.28,dm*1.4);
+    else{addTelegraph(c.tx,c.tz,e.r*3,1.25,dm*1.9);radialVolley(e,8,dm*.45);}},
+  colossus(e,c){    // MUSHROOM KING — zoner: summon / spore puddles / burst
+    const a=c.seq%3,dm=c.dm;
+    if(a===0)summonAdds(e,'wraith',3);
+    else if(a===1){for(let i=0;i<3;i++){const s=safeSpot(c.tx,c.tz,11,5);puddle(s[0],s[1],5,4,dm*.4);}}
+    else radialVolley(e,12,dm*.42,c.seq*0.4);},
+  trickster(e,c){   // MONKROOSE — blink + ring (after a beat) / spiral / leapers
+    const a=c.seq%3,dm=c.dm;
+    if(a===0){bossBlink(e,c.tx,c.tz,8,13);bossQueue(e,.6,()=>radialVolley(e,12,dm*.4));}
+    else if(a===1)spiralVolley(e,18,dm*.4);
+    else summonAdds(e,'leaper',3);},
+  shaman(e,c){      // TRIBAL — totems + cross slam + puddles
+    const a=c.seq%3,dm=c.dm;
+    if(a===0){for(let i=0;i<2;i++){const t=spawnEnemy('spitter',e.x+rand(-9,9),e.z+rand(-9,9));if(t){t.summoned=true;t.spd=0;t.behavior='range';}}}
+    else if(a===1)crossSlam(e,dm*1.3,c.tx,c.tz,0);
+    else{for(let i=0;i<4;i++){const s=safeSpot(c.tx,c.tz,12,5);puddle(s[0],s[1],5,4,dm*.4);}radialVolley(e,10,dm*.4);}},
+  overlord(e,c){    // OVERLORD — bullet-hell caster: offset rings / wide cone / summon+slam
+    const a=c.seq%3,dm=c.dm;
+    if(a===0){radialVolley(e,14,dm*.42,c.seq*0.25);bossQueue(e,.5,()=>radialVolley(e,14,dm*.42,c.seq*0.25+TAU/28));}
+    else if(a===1)coneVolley(e,c.nx,c.nz,1.5,9,dm*.45);
+    else{summonAdds(e,'assassin',2);addTelegraph(c.tx,c.tz,e.r*2.4,1,dm*1.6);}},
+  /* ---- biome finale bosses ---- */
+  pyrelord(e,c){    // PYRE LORD (dragon) — sweeping breath / meteor rain / lava charge; enrage adds a ring
+    const a=c.seq%3,dm=c.dm,base=Math.atan2(c.nz,c.nx);
+    if(a===0){for(let k=0;k<3;k++){const ang=base+(k-1)*.55;bossQueue(e,k*.28,()=>coneVolley(e,Math.cos(ang),Math.sin(ang),.9,5,dm*.45));}}
+    else if(a===1){for(let i=0;i<6;i++){const s=i===0?[c.tx,c.tz]:safeSpot(c.tx,c.tz,10,3.6);addTelegraph(s[0],s[1],3.6,.8+i*.16,dm*1.3,4);}}
+    else{lineSlam(e.x,e.z,c.nx,c.nz,4,6,3,.5,.06,dm*.8);e.windup=.55;
+      bossQueue(e,.55,()=>{e.dashT=1.0;e.ddx=c.nx;e.ddz=c.nz;e.hitCd=.2;for(let i=1;i<=4;i++)bossQueue(e,i*.2,()=>puddle(e.x,e.z,3.4,3.2,dm*.35,{kind:4,arm:.5}));});}
+    if(e.enraged)bossQueue(e,.9,()=>radialVolley(e,10,dm*.4,c.seq*.3));},
+  rimeking(e,c){    // RIME SOVEREIGN — frost nova ring / icicle rain + chill / avalanche fan / bulwarks
+    const a=c.seq%4,dm=c.dm,base=Math.atan2(c.nz,c.nx);
+    if(a===0)addRingTelegraph(e.x,e.z,6,15,1.3,dm*1.5);
+    else if(a===1){for(let i=0;i<5;i++){const s=i===0?[c.tx,c.tz]:safeSpot(c.tx,c.tz,9,3.2);const tg=addTelegraph(s[0],s[1],3.2,.85+i*.15,dm*1.2);if(tg)tg.after=t=>puddle(t.x,t.z,3.6,3.5,0,{kind:2,effect:'slow'});}}
+    else if(a===2){for(let k=-1;k<=1;k++){const ang=base+k*.5;lineSlam(e.x,e.z,Math.cos(ang),Math.sin(ang),4,6.5,3.6,.45,.24,dm*1.3);}}
+    else summonAdds(e,'shielder',2);},
+  monarch(e,c){     // VERDANT MONARCH — root cage / vine whips / drifting spore bloom + menders / trample
+    const a=c.seq%4,dm=c.dm,base=Math.atan2(c.nz,c.nx);
+    if(a===0)addRingTelegraph(c.tx,c.tz,3.6,9.5,1.4,dm*1.6);
+    else if(a===1){for(let k=-1;k<=1;k++){const ang=base+k*.6;lineSlam(e.x,e.z,Math.cos(ang),Math.sin(ang),4,5.5,3,.4,.16,dm*1.1);}}
+    else if(a===2){for(let i=0;i<3;i++){const s=safeSpot(c.tx,c.tz,12,4.5);const dx=c.tx-s[0],dz=c.tz-s[1],d=Math.hypot(dx,dz)||1;puddle(s[0],s[1],4.5,5,dm*.35,{kind:1,vx:dx/d*2.2,vz:dz/d*2.2});}summonAdds(e,Math.random()<.5?'mender':'burrower',2);}
+    else{lineSlam(e.x,e.z,c.nx,c.nz,3,6,3.2,.5,.06,dm*.9);e.windup=.55;bossQueue(e,.55,()=>{e.dashT=.8;e.ddx=c.nx;e.ddz=c.nz;e.hitCd=.2;});}},
+  archon(e,c){      // VOID ARCHON — gravity well that collapses / void rain / blink + spiral / motes
+    const a=c.seq%4,dm=c.dm;
+    if(a===0){puddle(c.tx,c.tz,9,2.6,0,{kind:3,effect:'pull',force:7.5});addTelegraph(c.tx,c.tz,5,2.6,dm*1.7,3);}
+    else if(a===1){for(let i=0;i<8;i++){const s=safeSpot(c.tx,c.tz,18,3);addTelegraph(s[0],s[1],3,.7+i*.14,dm*1.1,3);}}
+    else if(a===2){bossBlink(e,c.tx,c.tz,9,14);bossQueue(e,.6,()=>spiralVolley(e,16,dm*.4));}
+    else summonAdds(e,'mote',3);},
+  ossuary(e,c){     // OSSUARY KING — rotating bone spikes / sand vortex / raise the dead / skull volley
+    const a=c.seq%4,dm=c.dm;
+    if(a===0)crossSlam(e,dm*1.3,c.tx,c.tz,(c.seq%8)*Math.PI/4);
+    else if(a===1){addRingTelegraph(c.tx,c.tz,4,12,1.5,dm*1.5);puddle(c.tx,c.tz,12,1.5,0,{kind:3,effect:'pull',force:5});}
+    else if(a===2)summonAdds(e,'revenant',3);
+    else{radialVolley(e,12,dm*.4,c.seq*.3);bossQueue(e,.45,()=>coneVolley(e,c.nx,c.nz,1.1,5,dm*.5));}},
+};
+function bossAttack(e){const tp=nearestPlayer(e.x,e.z);const dx=tp.x-e.x,dz=tp.z-e.z,dd=Math.hypot(dx,dz)||1;
+  const c={tx:tp.x,tz:tp.z,nx:dx/dd,nz:dz/dd,d:dd,dm:e.dmg,seq:e.atkSeq++};
+  (BOSS_KITS[e.type]||BOSS_KITS.overlord)(e,c);}
+function playerPower(P){P=P||ST;let wl=0;for(const w in P.weapons)wl+=P.weapons[w];let pl=0;for(const p in P.passives)pl+=P.passives[p];
+  return (P.dmgMul||1)*(1+wl*0.10)*(1+pl*0.05)/Math.max(0.55,P.cdMul||1);}
+/* ---- biome hazards: telegraphed, dodgeable environmental attacks that run during active waves ---- */
+const HAZARDS={
+  vents:{cd:[7,10],run(){const n=2+Math.min(2,ST.loop);for(let i=0;i<n;i++){const s=safeSpot(ST.px,ST.pz,13,3.5);const tg=addTelegraph(s[0],s[1],3.5,1.2,hazDmg(1.1),4);if(tg)tg.after=t=>puddle(t.x,t.z,3,2.2,hazDmg(.3),{kind:4,arm:.4});}}},
+  icefall:{cd:[8,11],run(){for(let i=0;i<3;i++){const s=safeSpot(ST.px,ST.pz,12,3.2);addTelegraph(s[0],s[1],3.2,1.1,hazDmg(1.0),2);}}},
+  chill:{cd:[9,13],run(){const s=safeSpot(ST.px,ST.pz,14,5);puddle(s[0],s[1],5.5,7,0,{kind:2,effect:'slow'});}},
+  spores:{cd:[8,12],run(){for(let i=0;i<2;i++){const s=safeSpot(ST.px,ST.pz,16,4.5);const dx=ST.px-s[0],dz=ST.pz-s[1],d=Math.hypot(dx,dz)||1;puddle(s[0],s[1],4.5,6,hazDmg(.3),{kind:1,vx:dx/d*1.8,vz:dz/d*1.8});}}},
+  vines:{cd:[10,14],run(){const a=Math.random()*TAU,sx=ST.px+Math.cos(a)*22,sz=ST.pz+Math.sin(a)*22;lineSlam(sx,sz,-Math.cos(a),-Math.sin(a),5,4.8,2.6,.5,.14,hazDmg(1.0));}},
+  wells:{cd:[10,14],run(){const s=safeSpot(ST.px,ST.pz,9,5);puddle(s[0],s[1],9,2.8,0,{kind:3,effect:'pull',force:6.5});addTelegraph(s[0],s[1],4.5,2.8,hazDmg(1.4),3);}},
+  voidrain:{cd:[7,10],run(){for(let i=0;i<5;i++){const s=safeSpot(ST.px,ST.pz,14,2.6);addTelegraph(s[0],s[1],2.6,.8+i*.15,hazDmg(.9),3);}}},
+  sandstorm:{cd:[22,30],run(){ST.storm=7;toast('Sandstorm','Sight shrinks — the dead quicken','teal');for(let i=0;i<4;i++){const s=safeSpot(ST.px,ST.pz,12,3);addTelegraph(s[0],s[1],3,1.0+i*.3,hazDmg(1.0),6);}}},
+  quicksand:{cd:[9,13],run(){const s=safeSpot(ST.px,ST.pz,13,5);puddle(s[0],s[1],5,8,0,{kind:6,effect:'slow'});}},
+};
+function hazDmg(m){return Math.round((10+ST.wlevel*2.2+ST.loop*4)*m*(ST.mode==='campaign'?1+(ST.clevel-1)*.05:1));}
+function hazardTick(dt){if(ST.waveState!=='active'||ST.isBossWave&&ST.wave<10)return; // bosses are the focus; hazards join boss fights only deep in free play
+  const b=biomeById(ST.biome);for(const k of b.hazards){const h=HAZARDS[k];if(!h)continue;
+    if(ST.hazCds[k]==null)ST.hazCds[k]=rand(h.cd[0]*.6,h.cd[1]);ST.hazCds[k]-=dt;
+    if(ST.hazCds[k]<=0){ST.hazCds[k]=rand(h.cd[0],h.cd[1])*(ST.loop?.85:1);h.run();}}
+  if(ST.storm>0)ST.storm-=dt;}
 function fireEbullet(e,nx,nz){const mesh=take(ebulletMeshes);if(!mesh)return;
   mesh.position.set(e.x,e.y,e.z);
   ST.ebullets.push({mesh,x:e.x,y:e.y,z:e.z,vx:nx*22,vz:nz*22,life:3.2,dmg:e.dmg*0.55});
@@ -1385,164 +1782,258 @@ function nearestVisible(x,z,maxR){let best=null,bd=(maxR||1e9)**2;
     if(_proj.z>=1||Math.abs(_proj.x)>1.05||Math.abs(_proj.y)>1.08)continue; // off-screen / behind camera
     const dx=x-e.x,dz=z-e.z,d=dx*dx+dz*dz;if(d<bd){bd=d;best=e;}}
   return best;}
-function hurtEnemy(e,dmg,crit,mul){
+// src (optional) = where the hit came from, so the Bulwark can block frontal hits
+function hurtEnemy(e,dmg,crit,mul,src){
+  if(e.dead||e.invuln)return;
   if(crit===undefined)crit=Math.random()<ST.crit;
   if(mul===undefined)mul=ST.dmgMul;
-  const dealt=dmg*mul*(crit?2:1);e.hp-=dealt;
+  let dealt=dmg*mul*(crit?2:1);
+  if(e.behavior==='shield'&&src){const fx=e.faceX||0,fz=e.faceZ||0,dx=src.x-e.x,dz=src.z-e.z,d=Math.hypot(dx,dz)||1;
+    if((dx*fx+dz*fz)/d>0.3){dealt*=0.12;e.blockT=.18;spawnParts(e.x+fx*(e.r+.6),1.3,e.z+fz*(e.r+.6),0xBFE6FF,4);}}
+  e.hp-=dealt;
   dmgNumber(e.x,e.y+e.r+.4,e.z,Math.round(dealt),crit?'crit':'enemy');
-  if(e.hp<=0)killEnemy(e);else{sfx.hit();e.flash=.08;}
+  if(e.hp<=0)killEnemy(e);else{sfx.hit();e.flash=.1;}
 }
+/* what happens when a type dies: splitters spawn children, bombers detonate, revenants leave a bone pile */
+const ON_DEATH={
+  split(e){for(let i=0;i<3;i++){const s=spawnEnemy('grub',e.x+rand(-2,2),e.z+rand(-2,2));if(s)s.summoned=true;}},
+  exploder(e){if(e.detonated)return;addTelegraph(e.x,e.z,4.2,.75,e.dmg*2.2,4);},
+  split2(e){if(e.gen>=2)return;const sc=e.gen===0?.72:.5;
+    for(let i=0;i<2;i++){const m=spawnEnemy('mote',e.x+rand(-1.5,1.5),e.z+rand(-1.5,1.5),{sc,gen:e.gen+1,hpMul:sc*.75,dmgMul:.8});if(m){m.summoned=true;m.hitCd=.5;}}},
+  rise(e){if(e.risen)return;const tg=puddle(e.x,e.z,1.8,2.8,0,{kind:6});ST.rising.push({x:e.x,z:e.z,t:2.8,tg});},
+};
+function dropCoin(x,z){const cm=take(coinMeshes);if(cm){cm.position.set(x,.5,z);ST.coinDrops.push({mesh:cm,x,z});}}
+function dropHeart(x,z){const hm=take(heartMeshes);if(hm){hm.position.set(x,.9,z);ST.hearts.push({mesh:hm,x,z,ph:Math.random()*TAU});}}
 function killEnemy(e){
-  if(e.dead)return;e.dead=true;e.g.visible=false;e.g.userData.hpbar.visible=false;ST.kills++;
+  if(e.dead)return;e.dead=true;releaseEnemy(e.g);ST.kills++;
   const boss=isBossType(e.type);
-  const col=boss?0xFF2E4C:(e.type==='brute'?0xC43B8E:0xFF6650);
+  const col=boss?0xFF2E4C:(e.type==='brute'?0xC43B8E:(biomeById(ST.biome).deathCol||0xFF6650));
   spawnParts(e.x,e.y,e.z,col,boss?44:(e.r>1.4?24:11));
+  if(e.queue)e.queue.length=0;
   if(boss){ST.shake=Math.max(ST.shake,.85);toast((ETYPE[e.type].name||'Boss')+' down','Big haul dropped','teal');
     for(let i=0;i<3;i++){const om=take(orbMeshes);if(om){const ox=e.x+rand(-2,2),oz=e.z+rand(-2,2);om.position.set(ox,.8,oz);ST.orbs.push({mesh:om,x:ox,z:oz,v:Math.ceil(e.xp/3),pull:0,ph:Math.random()*TAU});}}
-    for(let i=0;i<12;i++){const cm=take(coinMeshes);if(cm){const cx=e.x+rand(-3,3),cz=e.z+rand(-3,3);cm.position.set(cx,.5,cz);ST.coinDrops.push({mesh:cm,x:cx,z:cz});}}
+    for(let i=0;i<12;i++)dropCoin(e.x+rand(-3,3),e.z+rand(-3,3));
+    dropHeart(e.x+rand(-2,2),e.z+rand(-2,2));
   }else{
     const om=take(orbMeshes);if(om){om.position.set(e.x,.8,e.z);ST.orbs.push({mesh:om,x:e.x,z:e.z,v:e.xp,pull:0,ph:Math.random()*TAU});}
-    if(e.behavior==='split'){for(let i=0;i<3;i++)spawnEnemy('grub',e.x+rand(-2,2),e.z+rand(-2,2));}
-    const dr=Math.random();
-    if(e.r>1.4){for(let i=0;i<4;i++){const cm=take(coinMeshes);if(cm){const cx=e.x+rand(-2,2),cz=e.z+rand(-2,2);cm.position.set(cx,.5,cz);ST.coinDrops.push({mesh:cm,x:cx,z:cz});}}}
-    else if(dr<.12){const cm=take(coinMeshes);if(cm){cm.position.set(e.x,.5,e.z);ST.coinDrops.push({mesh:cm,x:e.x,z:e.z});}}
+    const hook=ON_DEATH[e.behavior];if(hook)hook(e);
+    if(e.r>1.4||ETYPE[e.type].cat==='elite'){ST.shake=Math.max(ST.shake,.18);for(let i=0;i<4;i++)dropCoin(e.x+rand(-2,2),e.z+rand(-2,2));
+      if(Math.random()<.14&&!e.summoned)dropHeart(e.x,e.z);}
+    else if(Math.random()<.12)dropCoin(e.x,e.z);
   }
 }
 
-/* ============ weapons ============ */
-function fire(dt){const T=ST.timers,W=ST.weapons;
-  if(W.bolt){const s=WEAPONS.bolt.stat(W.bolt);T.bolt-=dt;
-    if(T.bolt<=0){const tgt=nearestVisible(ST.px,ST.pz,200);if(tgt){T.bolt=s.cd*ST.cdMul;
-      const base=Math.atan2(tgt.z-ST.pz,tgt.x-ST.px);
-      for(let i=0;i<s.count;i++){const a=base+(i-(s.count-1)/2)*.16;const bm=take(boltMeshes);if(!bm)break;
-        bm.visible=true;bm.position.set(ST.px,1.2,ST.pz);
-        ST.bolts.push({mesh:bm,x:ST.px,z:ST.pz,vx:Math.cos(a)*34,vz:Math.sin(a)*34,dmg:s.dmg,pierce:s.pierce,life:1.6});}
+/* ============ weapons ============
+   One fire routine for both players. P is ST (host, who=1) or ST.p2 (partner, who=2); every weapon
+   reads its owner's cdMul / dmgMul / crit so the partner's build is fully independent. */
+function fireFor(P,who,dt){const T=P.timers,W=P.weapons,cd=P.cdMul||1,mul=P.dmgMul||1,crit=P.crit==null?.05:P.crit;
+  const tgt=r=>who===1?nearestVisible(P.px,P.pz,r):nearestWithin(P.px,P.pz,Math.min(r,70));
+  if(W.bolt){const s=WEAPONS.bolt.stat(W.bolt);T.bolt=(T.bolt||0)-dt;
+    if(T.bolt<=0){const t=tgt(200);if(t){T.bolt=s.cd*cd;const base=Math.atan2(t.z-P.pz,t.x-P.px);
+      for(let i=0;i<s.count;i++){const a=base+(i-(s.count-1)/2)*.16;const bm=take(boltMeshes);if(!bm)break;bm.position.set(P.px,1.2,P.pz);
+        ST.bolts.push({mesh:bm,k:0,x:P.px,z:P.pz,vx:Math.cos(a)*34,vz:Math.sin(a)*34,dmg:s.dmg,pierce:s.pierce,life:1.6,mul,critC:crit,hit:new Set()});}
       sfx.shot();}}}
-  if(W.nova){const s=WEAPONS.nova.stat(W.nova);T.nova-=dt;
-    if(T.nova<=0){T.nova=s.cd*ST.cdMul;sfx.nova();novaFx={t:.4,max:.4,r:s.radius};ST.shake=Math.max(ST.shake,.35);
-      for(const e of ST.enemies){const dx=ST.px-e.x,dz=ST.pz-e.z;if(dx*dx+dz*dz<(s.radius+e.r)**2)hurtEnemy(e,s.dmg);}}}
+  if(W.nova){const s=WEAPONS.nova.stat(W.nova);T.nova=(T.nova||0)-dt;
+    if(T.nova<=0){T.nova=s.cd*cd;sfx.nova();blastFx(P.px,P.pz,s.radius,0xFFB13D);netFx(0,P.px,P.pz,s.radius);ST.shake=Math.max(ST.shake,.35);
+      for(const e of ST.enemies.slice()){if(e.dead||e.invuln)continue;const dx=P.px-e.x,dz=P.pz-e.z;if(dx*dx+dz*dz<(s.radius+e.r)**2)hurtEnemy(e,s.dmg,rollCrit(crit),mul);}}}
   if(W.scatter){const s=WEAPONS.scatter.stat(W.scatter);T.scatter=(T.scatter||0)-dt;
-    if(T.scatter<=0){T.scatter=s.cd*ST.cdMul;doScatter(ST.px,ST.pz,s,ST.dmgMul,ST.crit);}}
+    if(T.scatter<=0){T.scatter=s.cd*cd;doScatter(P.px,P.pz,s,mul,crit);}}
   if(W.lash){const s=WEAPONS.lash.stat(W.lash);T.lash=(T.lash||0)-dt;
-    if(T.lash<=0){T.lash=s.cd*ST.cdMul;const tgt=nearestVisible(ST.px,ST.pz,s.range+3);
-      let dx=1,dz=0;if(tgt){dx=tgt.x-ST.px;dz=tgt.z-ST.pz;}else{dx=(keys['d']?1:0)-(keys['a']?1:0)||1;dz=(keys['s']?1:0)-(keys['w']?1:0);}
-      doLash(ST.px,ST.pz,s,ST.dmgMul,dx,dz,ST.crit);}}
+    if(T.lash<=0){T.lash=s.cd*cd;const t=tgt(s.range+3);
+      let dx,dz;if(t){dx=t.x-P.px;dz=t.z-P.pz;}else{dx=P.faceX==null?1:P.faceX;dz=P.faceZ||0;}
+      doLash(P.px,P.pz,s,mul,dx,dz,crit);}}
   if(W.lance){const s=WEAPONS.lance.stat(W.lance);T.lance=(T.lance||0)-dt;
-    if(T.lance<=0){const tgt=nearestVisible(ST.px,ST.pz,200);if(tgt){T.lance=s.cd*ST.cdMul;doLance(ST.px,ST.pz,s,ST.dmgMul,tgt.x-ST.px,tgt.z-ST.pz,ST.crit);}}}
+    if(T.lance<=0){const t=tgt(200);if(t){T.lance=s.cd*cd;doLance(P.px,P.pz,s,mul,t.x-P.px,t.z-P.pz,crit);}}}
   if(W.chain){const s=WEAPONS.chain.stat(W.chain);T.chain=(T.chain||0)-dt;
-    if(T.chain<=0){const tgt=nearestVisible(ST.px,ST.pz,s.range+4);if(tgt){T.chain=s.cd*ST.cdMul;doChain(tgt,ST.px,ST.pz,s,ST.dmgMul,ST.crit);}}}
+    if(T.chain<=0){const t=tgt(s.range+4);if(t){T.chain=s.cd*cd;doChain(t,P.px,P.pz,s,mul,crit);}}}
+  if(W.mine){const s=WEAPONS.mine.stat(W.mine);T.mine=(T.mine||0)-dt;
+    if(T.mine<=0){T.mine=s.cd*cd;doMine(P,s);}}
+  stepMines(P,dt,mul,crit);
+  if(W.beam)stepBeam(P,WEAPONS.beam.stat(W.beam),dt,mul,crit,who);
+  if(W.orbit)stepOrbit(P,who===1?bladeMeshes:bladeMeshes2,WEAPONS.orbit.stat(W.orbit),dt,mul,crit);
 }
+function fire(dt){fireFor(ST,1,dt);}
 
 /* ============ input ============ */
-addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys[k]=true;
+const isEditable=t=>t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable);
+addEventListener('keydown',e=>{if(isEditable(e.target))return; // typing in a field must never steer, mute or start a run
+  const k=e.key.toLowerCase();keys[k]=true;
   if(state==='run'&&!NET.active&&(k==='p'||k==='escape'))setState('pause');
   else if(state==='pause'&&(k==='p'||k==='escape'))setState('run');
-  if(k==='m'){SAVE.muted=!SAVE.muted;persist();}
+  if(k==='m'){SAVE.muted=!SAVE.muted;persist();toast(SAVE.muted?'Sound off':'Sound on','','teal');}
   if(!$('levelup').classList.contains('hidden')&&['1','2','3'].includes(k)){const c=$('luCards').children[+k-1];if(c)c.click();}
   if(!$('startpick').classList.contains('hidden')&&['1','2','3'].includes(k)){const c=$('spCards').children[+k-1];if(c)c.click();}
-  if(k==='enter'){if(state==='over')$('btnRetry').click();else if(state==='home')startRun('free');}
+  if(k==='enter'){if(state==='over')$('btnRetry').click();else if(state==='home'&&$('dailyModal').classList.contains('hidden'))startRun('free');}
   if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k))e.preventDefault();
 });
 addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
-let joyOn=false,joX=0,joY=0,jvx=0,jvy=0;const joy=$('joy'),joyK=$('joyK');
-addEventListener('touchstart',e=>{if(state!=='run')return;const t=e.touches[0];joyOn=true;joX=t.clientX;joY=t.clientY;jvx=jvy=0;
+addEventListener('blur',()=>{for(const k in keys)keys[k]=false;});
+/* touch joystick — listens on the canvas only (overlays sit above it, so taps on cards still click),
+   tracks ONE finger by id so a second thumb can't hijack it, and clears on touchcancel */
+let joyOn=false,joX=0,joY=0,jvx=0,jvy=0,joyId=null;const joy=$('joy'),joyK=$('joyK');
+function endJoy(){joyOn=false;joyId=null;jvx=jvy=0;joy.style.display='none';}
+cv.addEventListener('touchstart',e=>{if(state!=='run'||joyOn)return;const t=e.changedTouches[0];joyOn=true;joyId=t.identifier;joX=t.clientX;joY=t.clientY;jvx=jvy=0;
   joy.style.display='block';joy.style.left=(joX-63)+'px';joy.style.top=(joY-63)+'px';joyK.style.left='37px';joyK.style.top='37px';e.preventDefault();},{passive:false});
-addEventListener('touchmove',e=>{if(!joyOn)return;const t=e.touches[0];let dx=t.clientX-joX,dy=t.clientY-joY;const d=Math.hypot(dx,dy)||1,mag=Math.min(d,50);
+cv.addEventListener('touchmove',e=>{if(!joyOn)return;let t=null;for(const c of e.changedTouches)if(c.identifier===joyId)t=c;if(!t)return;
+  let dx=t.clientX-joX,dy=t.clientY-joY;const d=Math.hypot(dx,dy)||1,mag=Math.min(d,50);
   jvx=dx/d*(mag/50);jvy=dy/d*(mag/50);joyK.style.left=(37+dx/d*mag)+'px';joyK.style.top=(37+dy/d*mag)+'px';e.preventDefault();},{passive:false});
-addEventListener('touchend',()=>{joyOn=false;jvx=jvy=0;joy.style.display='none';});
+const joyEnd=e=>{if(!joyOn)return;for(const c of e.changedTouches)if(c.identifier===joyId)endJoy();};
+cv.addEventListener('touchend',joyEnd);cv.addEventListener('touchcancel',joyEnd);
+
+/* ============ enemy behaviours ============
+   Every non-boss enemy runs BEHAVIORS[e.behavior](e,c,dt) each frame. c = {tx,tz (target player), dx,dz,d,
+   nx,nz (unit dir to it), who}. Behaviours own their movement; shared post-steps (clamp, model, contact) follow. */
+const chaseStep=(e,c,dt,k)=>{k=k==null?1:k;e.x+=c.nx*e.spd*k*dt;e.z+=c.nz*e.spd*k*dt;};
+const BEHAVIORS={
+  chase(e,c,dt){e.x+=c.nx*e.spd*dt+Math.cos(e.ph)*.4*dt;e.z+=c.nz*e.spd*dt+Math.sin(e.ph)*.4*dt;},
+  zig(e,c,dt){const p=Math.sin(e.ph*2.2)*.5;e.x+=(c.nx*e.spd-c.nz*e.spd*p)*dt;e.z+=(c.nz*e.spd+c.nx*e.spd*p)*dt;},
+  charge(e,c,dt){e.chargeCd-=dt;
+    if(e.dashT>0){e.dashT-=dt;e.x+=e.ddx*24*dt;e.z+=e.ddz*24*dt;}
+    else{chaseStep(e,c,dt);if(e.chargeCd<=0&&c.d<32){e.dashT=.45;e.ddx=c.nx;e.ddz=c.nz;e.chargeCd=2.8;}}},
+  range(e,c,dt){const mv=c.d<16?-1:(c.d>30?.7:0);chaseStep(e,c,dt,mv);
+    e.shootCd-=dt;if(e.shootCd<=0&&c.d<42){e.shootCd=rand(1.8,2.6);fireEbullet(e,c.nx,c.nz);}},
+  leap(e,c,dt){ // Leaper — creeps, then hops at you
+    e.leapCd=(e.leapCd==null?rand(1,2):e.leapCd)-dt;
+    if(e.dashT>0){e.dashT-=dt;e.x+=e.ddx*22*dt;e.z+=e.ddz*22*dt;}
+    else{chaseStep(e,c,dt,.45);if(e.leapCd<=0&&c.d<28){e.dashT=.34;e.ddx=c.nx;e.ddz=c.nz;e.leapCd=rand(1.3,2.1);}}},
+  blink(e,c,dt){ // Assassin — blinks in on you, but can't strike the instant it lands
+    e.blinkCd=(e.blinkCd==null?rand(1.5,3):e.blinkCd)-dt;
+    if(e.blinkCd<=0&&c.d>9){spawnParts(e.x,1,e.z,0x9D5CFF,12);const a=Math.random()*TAU;e.x=c.tx+Math.cos(a)*4;e.z=c.tz+Math.sin(a)*4;spawnParts(e.x,1,e.z,0x9D5CFF,12);
+      e.blinkCd=rand(2,3.4);e.hitCd=Math.max(e.hitCd,0.7);} // recovery window: telegraphs the hit so you can dodge
+    else chaseStep(e,c,dt);},
+  /* ---- biome mobs ---- */
+  exploder(e,c,dt){ // Cinder Bomber — runs at you; close enough, it lights a fuse and bursts (also bursts on death)
+    if(e.fused){e.fuse-=dt;drawRing(e.x,e.z,1.2+(.8-e.fuse)*1.5,0xFF6A2E,.5+.4*Math.sin(ST.t*30));
+      if(e.fuse<=0){e.detonated=true;killEnemy(e);}return;}
+    chaseStep(e,c,dt,1.1);if(c.d<3.4){e.fused=true;e.fuse=.8;addTelegraph(e.x,e.z,4.2,.8,e.dmg*2.2,4);e.hitCd=9;}},
+  shield(e,c,dt){ // Rime Bulwark — frontal hits mostly bounce off; flank it
+    chaseStep(e,c,dt,.9);const ang=Math.atan2(c.nz,c.nx);
+    drawArc(e.x+c.nx*.3,e.z+c.nz*.3,e.r+1.3,-ang,0xBFE6FF,e.blockT>0?.95:.45);if(e.blockT>0)e.blockT-=dt;},
+  kite(e,c,dt){ // Rime Spitter — keeps its distance, strafes, lobs chilling shots
+    const want=c.d<15?-1:(c.d>24?1:0);chaseStep(e,c,dt,want);const s=Math.sin(e.ph*.9);e.x+=-c.nz*e.spd*.6*s*dt;e.z+=c.nx*e.spd*.6*s*dt;
+    e.shootCd-=dt;if(e.shootCd<=0&&c.d<40){e.shootCd=rand(2.2,3.0);fireShot(e,c.nx,c.nz,e.dmg*.7,19,{chill:1,big:true});beep(520,.1,'triangle',.02,-200);}},
+  burrow(e,c,dt){ // Root Burrower — dives, tunnels to you, marks the ground, erupts, then is exposed for a while
+    e.st=e.st||0;e.tmr=(e.tmr==null?2.5:e.tmr)-dt;
+    if(e.st===0){chaseStep(e,c,dt,.5);if(e.tmr<=0){e.st=1;e.tmr=4.5;e.invuln=true;e.g.visible=false;e.g.userData.hpbar.visible=false;spawnParts(e.x,.3,e.z,0x8a6a3a,10);}}
+    else if(e.st===1){chaseStep(e,c,dt,1.0);drawRing(e.x,e.z,1.3,0x8a6a3a,.6);
+      if(c.d<2.4||e.tmr<=0){e.st=2;e.tmr=.85;e.x=c.tx;e.z=c.tz;addTelegraph(e.x,e.z,3.2,.85,e.dmg*1.3,1);}}
+    else{drawRing(e.x,e.z,1.3+(.85-e.tmr)*2,0x8a6a3a,.7);
+      if(e.tmr<=0){e.st=0;e.tmr=3.2;e.invuln=false;e.g.visible=true;e.g.userData.hpbar.visible=true;e.hitCd=.6;spawnParts(e.x,.6,e.z,0x8FCF3A,16);}}},
+  heal(e,c,dt){ // Spore Mender — hangs back and pulses healing + haste into nearby mobs
+    const want=c.d<11?-1:(c.d>18?1:0);chaseStep(e,c,dt,want);
+    e.healCd=(e.healCd==null?1.5:e.healCd)-dt;const p=clamp(1-e.healCd/.6,0,1);
+    drawRing(e.x,e.z,2+p*7,0x7CFF9E,(1-p)*.5+.08);
+    if(e.healCd<=0){e.healCd=2.6;spawnParts(e.x,1.4,e.z,0x7CFF9E,10);
+      for(const o of ST.enemies){if(o.dead||o===e)continue;const dx=o.x-e.x,dz=o.z-e.z;if(dx*dx+dz*dz<81){o.hp=Math.min(o.maxhp,o.hp+o.maxhp*(isBossType(o.type)?.03:.12));o.buffT=2;}}}},
+  split2(e,c,dt){BEHAVIORS.zig(e,c,dt);}, // Void Mote — chases; splits twice on death (see ON_DEATH)
+  gravity(e,c,dt){ // Void Anchor — slow drifter whose well drags players toward it
+    chaseStep(e,c,dt,.8);const R=11;drawRing(e.x,e.z,R,0xC58BFF,.22+.08*Math.sin(ST.t*4));drawRing(e.x,e.z,R*(.3+((ST.t*.6)%1)*.7),0xC58BFF,.18);
+    for(const P of [ST,ST.coop?ST.p2:null]){if(!P||P.down)continue;const dx=e.x-P.px,dz=e.z-P.pz,d=Math.hypot(dx,dz);if(d<R&&d>1){P.pullX+=dx/d*4.2;P.pullZ+=dz/d*4.2;}}},
+  rise(e,c,dt){BEHAVIORS.chase(e,c,dt);}, // Revenant — plain chaser that comes back once (see ON_DEATH / rising)
+  lunge(e,c,dt){ // Bone Impaler — lines up a marked charge lane, then bolts down it
+    e.lungeCd=(e.lungeCd==null?rand(2,3.5):e.lungeCd)-dt;
+    if(e.dashT>0){e.dashT-=dt;e.x+=e.ddx*26*dt;e.z+=e.ddz*26*dt;return;}
+    chaseStep(e,c,dt,.9);
+    if(e.lungeCd<=0&&c.d<30&&c.d>5){e.lungeCd=rand(3.2,4.5);e.windup=.75;const nx=c.nx,nz=c.nz;lineSlam(e.x,e.z,nx,nz,4,5,2.4,.75,.04,e.dmg*1.2);
+      bossQueue(e,.75,()=>{e.dashT=.7;e.ddx=nx;e.ddz=nz;e.hitCd=.9;});}},
+};
+BEHAVIORS.slow=BEHAVIORS.summon=BEHAVIORS.overlord=BEHAVIORS.split=BEHAVIORS.chase;
 
 /* ============ update ============ */
 const tmpV=new THREE.Vector3();
+const _pt={who:1,tx:0,tz:0,tm:0}; // scratch target for pickups (no per-orb allocation)
+function pickTarget(ox,oz,p2co,mag2,p2mag){let who=1,tx=ST.px,tz=ST.pz,tm=mag2;const hostOk=!ST.down;
+  if(p2co&&!p2co.down){const d1=(ST.px-ox)**2+(ST.pz-oz)**2,d2b=(p2co.px-ox)**2+(p2co.pz-oz)**2;
+    if(!hostOk||d2b<d1){who=2;tx=p2co.px;tz=p2co.pz;tm=p2mag;}}
+  else if(!hostOk)return null;
+  _pt.who=who;_pt.tx=tx;_pt.tz=tz;_pt.tm=tm;return _pt;}
+// a player's HP reached 0 outside hurtPlayer (arena drain): same rules as a hit
+function playerZero(who){if(who===2){const p=ST.p2;p.hp=0;if(!p.down){p.down=true;toast('Partner down','Clear the wave to revive them','teal');}if(ST.down)endRun();return;}
+  ST.hp=0;if(ST.coop){if(!ST.down){ST.down=true;toast('You are down','Your partner can revive you','teal');}if(!ST.p2||ST.p2.down)endRun();}else endRun();}
 function update(dt){
-  if(ST.luLock){stepParticles(dt);return;} // co-op level-up: freeze the world while a player picks
-  ST.t+=dt;
+  if(ST.luLock){stepParticles(dt);fxFrameEnd();return;} // co-op level-up: freeze the world while a player picks
+  ST.t+=dt;stepBiome(dt);
   let mx=(keys['d']||keys['arrowright']?1:0)-(keys['a']||keys['arrowleft']?1:0);
   let mz=(keys['s']||keys['arrowdown']?1:0)-(keys['w']||keys['arrowup']?1:0);
   if(joyOn){mx=jvx;mz=jvy;}
   const ml=Math.hypot(mx,mz);if(ml>1){mx/=ml;mz/=ml;}
-  let npx=ST.px+mx*ST.speed*dt,npz=ST.pz+mz*ST.speed*dt;
+  if(ml>.1){ST.faceX=mx/ml;ST.faceZ=mz/ml;}
+  if(ST.chillT>0)ST.chillT-=dt;
+  const hostMove=!(ST.coop&&ST.down);
+  const sp=ST.speed*ST.slowMul*(ST.chillT>0?.6:1);
+  let npx=ST.px+(hostMove?mx*sp:0)*dt+ST.pullX*dt,npz=ST.pz+(hostMove?mz*sp:0)*dt+ST.pullZ*dt;
   const HARD=ARENA*1.35;let rr=Math.hypot(npx,npz);
   if(rr>HARD){npx*=HARD/rr;npz*=HARD/rr;rr=HARD;}
   ST.px=npx;ST.pz=npz;
-  // red circle = the arena boundary: warn + pull back + drain if you leave it
+  // red circle = the arena boundary: warn + pull back + drain if you leave it (and yes, it can kill you)
   if(rr>ARENA){const inv=1/(rr||1),pull=Math.min(rr-ARENA,ST.speed*dt*0.7);
-    ST.px-=ST.px*inv*pull;ST.pz-=ST.pz*inv*pull;ST.hp-=9*dt;ST.hitFlash=Math.max(ST.hitFlash,.4);}
+    ST.px-=ST.px*inv*pull;ST.pz-=ST.pz*inv*pull;ST.hitFlash=Math.max(ST.hitFlash,.4);
+    if(!ST.down){ST.hp-=9*dt;if(ST.hp<=0){playerZero(1);if(ST.over)return;}}}
   ST.outFrac=clamp((Math.hypot(ST.px,ST.pz)-ARENA*0.84)/(ARENA*0.28),0,1);
-  player.position.set(ST.px,1.4+Math.sin(ST.t*3)*.12,ST.pz);
+  player.position.set(ST.px,1.4+Math.sin(ST.t*3)*.12,ST.pz);player.visible=!ST.down;
   pmark.visible=!ST.down;pmark.position.set(ST.px,.06,ST.pz);
   pcore.rotation.y+=dt*1.2;pcore.rotation.x+=dt*.6;pshell.rotation.y-=dt*.8;
   const puls=1+Math.sin(ST.t*6)*.04;pshell.scale.setScalar(puls);
   emberLight.position.set(ST.px,2.6,ST.pz);
-  if(ml>.1&&Math.random()<.5)spawnParts(ST.px,.6,ST.pz,skinById(SAVE.skin).emis,1);
+  if(ml>.1&&hostMove&&Math.random()<.5)spawnParts(ST.px,.6,ST.pz,skinById(SAVE.skin).emis,1);
 
-  ST.hp=Math.min(ST.maxhp,ST.hp+ST.regen*dt);ST.iframe-=dt;
+  if(!ST.down)ST.hp=Math.min(ST.maxhp,ST.hp+ST.regen*dt);ST.iframe-=dt;
   // co-op: move + fire + regen partner (P2), broadcast state
   if(ST.coop&&ST.isHost&&ST.p2){const p=ST.p2;
     if(!p.down){let m2x=NET.guestInput.mx,m2z=NET.guestInput.mz;const ml2=Math.hypot(m2x,m2z);if(ml2>1){m2x/=ml2;m2z/=ml2;}
-      const psp=p.speed||17;let nx2=p.px+m2x*psp*dt,nz2=p.pz+m2z*psp*dt;const rr2=Math.hypot(nx2,nz2),HD=ARENA*1.35;if(rr2>HD){nx2*=HD/rr2;nz2*=HD/rr2;}p.px=nx2;p.pz=nz2;
+      if(ml2>.1){p.faceX=m2x/ml2;p.faceZ=m2z/ml2;}if(p.chillT>0)p.chillT-=dt;
+      const psp=(p.speed||17)*(p.slowMul||1)*(p.chillT>0?.6:1);let nx2=p.px+m2x*psp*dt+(p.pullX||0)*dt,nz2=p.pz+m2z*psp*dt+(p.pullZ||0)*dt;const rr2=Math.hypot(nx2,nz2),HD=ARENA*1.35;if(rr2>HD){nx2*=HD/rr2;nz2*=HD/rr2;}p.px=nx2;p.pz=nz2;
+      const r2=Math.hypot(p.px,p.pz);if(r2>ARENA){const inv=1/r2,pull=Math.min(r2-ARENA,(p.speed||17)*dt*0.7);p.px-=p.px*inv*pull;p.pz-=p.pz*inv*pull;p.hp-=9*dt;if(p.hp<=0){playerZero(2);if(ST.over)return;}}
       p.hp=Math.min(p.maxhp,p.hp+(p.regen||1)*dt);if(p.iframe>0)p.iframe-=dt;}
-    player2.position.set(p.px,1.4+Math.sin(ST.t*3+1)*.12,p.pz);player2.visible=true;p2core.rotation.y+=dt*1.2;p2shell.rotation.y-=dt*.8;p2light.position.set(p.px,2.6,p.pz);
+    player2.position.set(p.px,1.4+Math.sin(ST.t*3+1)*.12,p.pz);player2.visible=!p.down;p2core.rotation.y+=dt*1.2;p2shell.rotation.y-=dt*.8;p2light.position.set(p.px,2.6,p.pz);
     p2mark.visible=!p.down;p2mark.position.set(p.px,.06,p.pz);
     fireP2(dt);
     NET.acc+=dt;if(NET.acc>=0.066){NET.acc=0;netBroadcast();}}
-  waveManager(dt);fire(dt);updateTelegraphs(dt);
-
-  if(ST.weapons.orbit){const s=WEAPONS.orbit.stat(ST.weapons.orbit);ST.orbitAng+=dt*2.6;
-    for(let i=0;i<bladeMeshes.length;i++){const bm=bladeMeshes[i];
-      if(i<s.count){bm.visible=true;const a=ST.orbitAng+i*TAU/s.count;const bx=ST.px+Math.cos(a)*s.radius,bz=ST.pz+Math.sin(a)*s.radius;
-        bm.position.set(bx,1.3,bz);bm.rotation.x+=dt*6;bm.rotation.y+=dt*4;
-        for(const e of ST.enemies){if(e.bladeCd>0)continue;const dx=bx-e.x,dz=bz-e.z;if(dx*dx+dz*dz<(1+e.r)**2){hurtEnemy(e,s.dmg);e.bladeCd=.35;}}
-      }else bm.visible=false;}}
+  waveManager(dt);if(ST.over)return;
+  if(hostMove)fire(dt);else hideBeams(1);
+  updateTelegraphs(dt);hazardTick(dt);stepAmbient(dt,ST.px,ST.pz);
+  // sandstorm: fog closes in for a few seconds (Bone Desert)
+  {const k=ST.storm>0?Math.min(1,ST.storm):0;if(k>0||ST.stormWas){scene.fog.near=PAL.near*(1-.55*k);scene.fog.far=PAL.far*(1-.6*k);ST.stormWas=k>0;}}
+  // revenants climbing out of their bone piles — stand on the pile to stop it
+  for(const r of ST.rising){r.t-=dt;drawRing(r.x,r.z,1.2+Math.sin(ST.t*8)*.2,0xEDE4D0,.5);
+    if(r.t<=0){r.done=true;const stomped=(ST.px-r.x)**2+(ST.pz-r.z)**2<5||(ST.coop&&ST.p2&&(ST.p2.px-r.x)**2+(ST.p2.pz-r.z)**2<5);
+      if(stomped){spawnParts(r.x,.5,r.z,0xEDE4D0,10);}else{const s=spawnEnemy('revenant',r.x,r.z,{risen:true,hpMul:.5});if(s){s.hitCd=.7;spawnParts(r.x,.8,r.z,0xEDE4D0,16);}}}}
+  if(ST.rising.some(r=>r.done))ST.rising=ST.rising.filter(r=>!r.done);
 
   // separation pass — hitboxes so monsters don't cram into each other
-  {const EN=ST.enemies;for(let i=0;i<EN.length;i++){const a=EN[i];if(a.dead)continue;
-    for(let j=i+1;j<EN.length;j++){const b=EN[j];if(b.dead)continue;
+  {const EN=ST.enemies;for(let i=0;i<EN.length;i++){const a=EN[i];if(a.dead||a.invuln)continue;
+    for(let j=i+1;j<EN.length;j++){const b=EN[j];if(b.dead||b.invuln)continue;
       const sx=a.x-b.x,sz=a.z-b.z,rr=(a.r+b.r)*0.92,s2=sx*sx+sz*sz;
       if(s2<rr*rr&&s2>1e-4){const sd=Math.sqrt(s2),push=(rr-sd)/sd*0.5,aw=a.isWaveBoss?0.12:1,bw=b.isWaveBoss?0.12:1;
         a.x+=sx*push*aw;a.z+=sz*push*aw;b.x-=sx*push*bw;b.z-=sz*push*bw;}}}}
   // enemies: behavior + movement + animation ("life")
   const cone=t=>t==='dart'||t==='stinger'||t==='wraith'||t==='charger';
-  for(const e of ST.enemies){if(e.dead)continue;e.ph+=dt*4;if(e.bladeCd>0)e.bladeCd-=dt;if(e.flash>0)e.flash-=dt;
+  const stormSp=ST.storm>0?1.2:1;const _c={tx:0,tz:0,dx:0,dz:0,d:1,nx:0,nz:0,who:1};
+  for(const e of ST.enemies){if(e.dead)continue;e.ph+=dt*4;if(e.bladeCd>0)e.bladeCd-=dt;if(e.flash>0)e.flash-=dt;if(e.buffT>0)e.buffT-=dt;
     const _tp=ST.coop?nearestPlayer(e.x,e.z):null;const targX=_tp?_tp.x:ST.px,targZ=_tp?_tp.z:ST.pz,targWho=_tp?_tp.who:1;
     let dx=targX-e.x,dz=targZ-e.z;const d=Math.hypot(dx,dz)||1;const nx=dx/d,nz=dz/d;
-    const beh=e.behavior;
-    if(e.isWaveBoss){
+    e.faceX=nx;e.faceZ=nz;_c.tx=targX;_c.tz=targZ;_c.dx=dx;_c.dz=dz;_c.d=d;_c.nx=nx;_c.nz=nz;_c.who=targWho;
+    const beh=e.behavior;let spdSave=e.spd;e.spd*=stormSp*(e.buffT>0?1.25:1); // temporary multipliers; restored below
+    if(e.queue&&e.queue.length)stepBossQueue(e,dt);
+    if(e.windup>0){e.windup-=dt;} // frozen while telegraphing a charge
+    else if(e.isWaveBoss){
       e.atkCd-=dt;
+      if(!e.enraged&&e.hp<e.maxhp*.35){e.enraged=true;e.atkBase*=.72;spdSave*=1.12;e.spd*=1.12;bannerMsg('ENRAGED',ETYPE[e.type].name);ST.shake=Math.max(ST.shake,.5);}
       if(e.dashT>0){e.dashT-=dt;e.x+=e.ddx*20*dt;e.z+=e.ddz*20*dt;}
-      else{if(d>e.r+4)e.x+=nx*e.spd*dt,e.z+=nz*e.spd*dt;
-        if(e.atkCd<=0&&d<58){e.atkCd=rand(2.3,3.3);bossAttack(e);}}
-    }else if(beh==='charge'){
-      e.chargeCd-=dt;
-      if(e.dashT>0){e.dashT-=dt;e.x+=e.ddx*24*dt;e.z+=e.ddz*24*dt;}
-      else{e.x+=nx*e.spd*dt;e.z+=nz*e.spd*dt;
-        if(e.chargeCd<=0&&d<32){e.dashT=.45;e.ddx=nx;e.ddz=nz;e.chargeCd=2.8;}}
-    }else if(beh==='range'){
-      const mv=d<16?-1:(d>30?.7:0);
-      e.x+=nx*e.spd*mv*dt;e.z+=nz*e.spd*mv*dt;
-      e.shootCd-=dt;if(e.shootCd<=0&&d<42){e.shootCd=rand(1.8,2.6);fireEbullet(e,nx,nz);}
-    }else if(beh==='zig'){
-      const p=Math.sin(e.ph*2.2)*.5;
-      e.x+=(nx*e.spd+ -nz*e.spd*p)*dt;e.z+=(nz*e.spd+ nx*e.spd*p)*dt;
-    }else if(beh==='leap'){ // Leaper — creeps, then hops at you
-      e.leapCd=(e.leapCd==null?rand(1,2):e.leapCd)-dt;
-      if(e.dashT>0){e.dashT-=dt;e.x+=e.ddx*22*dt;e.z+=e.ddz*22*dt;}
-      else{e.x+=nx*e.spd*.45*dt;e.z+=nz*e.spd*.45*dt;if(e.leapCd<=0&&d<28){e.dashT=.34;e.ddx=nx;e.ddz=nz;e.leapCd=rand(1.3,2.1);}}
-    }else if(beh==='blink'){ // Assassin — blinks in on you, but can't strike the instant it lands
-      e.blinkCd=(e.blinkCd==null?rand(1.5,3):e.blinkCd)-dt;
-      if(e.blinkCd<=0&&d>9){spawnParts(e.x,1,e.z,0x9D5CFF,12);e.x=targX+rand(-4,4);e.z=targZ+rand(-4,4);spawnParts(e.x,1,e.z,0x9D5CFF,12);
-        e.blinkCd=rand(2,3.4);e.hitCd=Math.max(e.hitCd,0.7);} // recovery window: telegraphs the hit so you can dodge
-      else{e.x+=nx*e.spd*dt;e.z+=nz*e.spd*dt;}
-    }else{
-      e.x+=nx*e.spd*dt+Math.cos(e.ph)*.4*dt;e.z+=nz*e.spd*dt+Math.sin(e.ph)*.4*dt;
-    }
+      else{if(d>(e.keep||e.r+4))e.x+=nx*e.spd*dt,e.z+=nz*e.spd*dt;
+        if(e.atkCd<=0&&d<58){e.atkCd=rand(e.atkBase||2.3,(e.atkBase||2.3)+1);bossAttack(e);}}
+    }else{(BEHAVIORS[beh]||BEHAVIORS.chase)(e,_c,dt);}
     if(beh==='summon'||beh==='overlord'){e.summonCd-=dt;if(e.summonCd<=0){e.summonCd=beh==='overlord'?4.5:6;spawnEnemy(beh==='overlord'?'wraith':'grub',e.x+rand(-4,4),e.z+rand(-4,4));}}
     if(beh==='overlord'){e.shootCd-=dt;if(e.shootCd<=0&&d<52){e.shootCd=1.3;const a0=Math.atan2(nz,nx);for(let s=-1;s<=1;s++){const a=a0+s*.32;fireEbullet(e,Math.cos(a),Math.sin(a));}}}
+    e.spd=spdSave;
+    if(e.dead)continue;
     e.x=clamp(e.x,-ARENA,ARENA);e.z=clamp(e.z,-ARENA,ARENA);
     const g=e.g,ud=g.userData;
+    const punch=e.sc*(1+Math.max(0,e.flash)*1.8);g.scale.setScalar(punch);
     if(ud.model){ // real animated monster model
       g.rotation.set(0,Math.atan2(dx,dz)+(MODELINFO[e.type].faceOff||0),0);
       g.position.set(e.x,0,e.z);
-      if(ud.mixer){ // play the run cycle at the enemy's ACTUAL movement speed (no fast-limb sliding)
+      if(ud.mixer&&g.visible){ // play the run cycle at the enemy's ACTUAL movement speed (no fast-limb sliding)
         const moved=Math.hypot(e.x-(e.lx===undefined?e.x:e.lx),e.z-(e.lz===undefined?e.z:e.lz))/Math.max(dt,1e-4);
         e.aspd=(e.aspd||0)*0.75+moved*0.25;
         const rate=e.dashT>0?2.4:clamp(e.aspd/6.5,0.12,1.9);
@@ -1554,60 +2045,61 @@ function update(dt){
         ud.body.scale.set(1+(1-hop)*.12,1-(1-hop)*.18+hop*.1,1+(1-hop)*.12);}
       else if(cone(e.type)){g.position.set(e.x,e.y+(e.dashT>0?.3:0),e.z);g.rotation.x=Math.PI/2;g.rotation.z=Math.sin(e.ph*2)*.3;}
       else{const big=ETYPE[e.type].cat==='boss';
-        g.position.set(e.x,e.y+Math.sin(e.ph*(big?.5:.9))*(big?.4:.22),e.z);
+        g.position.set(e.x,e.y*e.sc+Math.sin(e.ph*(big?.5:.9))*(big?.4:.22),e.z);
         if(ud.shards)ud.shards.rotation.y+=dt*(big?1.0:1.6);
         if(ud.core)ud.core.scale.setScalar(1+Math.sin(e.ph*(big?1.2:2))*.12);}
     }
     e.lx=e.x;e.lz=e.z; // remember position for next-frame speed calc
     // health bar (billboarded, over everything)
     const hb=ud.hpbar,frac=Math.max(0,e.hp/e.maxhp),w=hb.userData.w;
-    const barY=ud.model?(MODELINFO[e.type].headY):(e.y+e.r+(ETYPE[e.type].cat==='boss'?1.7:0.85));
+    const barY=(ud.model?(MODELINFO[e.type].headY):(e.y+e.r+(ETYPE[e.type].cat==='boss'?1.7:0.85)))*e.sc;
     hb.position.set(e.x,barY,e.z);
     hb.quaternion.copy(camera.quaternion);
     const fill=hb.userData.fill;fill.scale.x=Math.max(.0001,w*frac);fill.position.x=-(w*(1-frac))/2;
     e.hitCd-=dt;
-    if(e.hitCd<=0&&d<e.r+1.3){ if(targWho===2){if(ST.p2&&!ST.p2.down&&(ST.p2.iframe||0)<=0){e.hitCd=.6;hurtPlayer(e.dmg,2);}} else if(!ST.down&&ST.iframe<=0){e.hitCd=.6;hurtPlayer(e.dmg,1);} }
+    if(!e.invuln&&e.hitCd<=0&&d<e.r+1.3){ if(targWho===2){if(ST.p2&&!ST.p2.down&&(ST.p2.iframe||0)<=0){e.hitCd=.6;hurtPlayer(e.dmg,2);}} else if(!ST.down&&ST.iframe<=0){e.hitCd=.6;hurtPlayer(e.dmg,1);} }
+    if(ST.over)return;
   }
   ST.enemies=ST.enemies.filter(e=>!e.dead);
 
   const p2co=(ST.coop&&ST.p2)?ST.p2:null;
-  // enemy projectiles — can hit either player
+  // enemy projectiles — can hit either player; chilling shots slow the target for a moment
   for(const b of ST.ebullets){b.life-=dt;b.x+=b.vx*dt;b.z+=b.vz*dt;b.mesh.position.set(b.x,b.y,b.z);
-    if(!ST.down&&ST.iframe<=0){const dx=b.x-ST.px,dz=b.z-ST.pz;if(dx*dx+dz*dz<2.6){hurtPlayer(b.dmg,1);b.life=0;continue;}}
-    if(p2co&&!p2co.down&&(p2co.iframe||0)<=0){const dx=b.x-p2co.px,dz=b.z-p2co.pz;if(dx*dx+dz*dz<2.6){hurtPlayer(b.dmg,2);b.life=0;}}}
-  ST.ebullets=ST.ebullets.filter(b=>{if(b.life>0)return true;b.mesh.visible=false;return false;});
+    if(!ST.down&&ST.iframe<=0){const dx=b.x-ST.px,dz=b.z-ST.pz;if(dx*dx+dz*dz<2.6){hurtPlayer(b.dmg,1);if(b.chill)ST.chillT=1.1;b.life=0;continue;}}
+    if(p2co&&!p2co.down&&(p2co.iframe||0)<=0){const dx=b.x-p2co.px,dz=b.z-p2co.pz;if(dx*dx+dz*dz<2.6){hurtPlayer(b.dmg,2);if(b.chill)p2co.chillT=1.1;b.life=0;}}}
+  ST.ebullets=ST.ebullets.filter(b=>{if(b.life>0)return true;b.mesh.visible=false;b.mesh.scale.setScalar(1);return false;});
+  if(ST.over)return;
 
-  for(const b of ST.bolts){b.life-=dt;b.x+=b.vx*dt;b.z+=b.vz*dt;b.mesh.position.set(b.x,1.2,b.z);
-    for(const e of ST.enemies){if(e.dead)continue;const dx=b.x-e.x,dz=b.z-e.z;if(dx*dx+dz*dz<(.5+e.r)**2){
-      hurtEnemy(e,b.dmg,rollCrit(b.critC),b.mul);spawnParts(b.x,1.2,b.z,0xFFB13D,3);if(b.pierce>0)b.pierce--;else{b.life=0;}break;}}}
+  // player projectiles: each enemy can be hit once per projectile; pierce = how many MORE enemies it may pass through
+  const _src={x:0,z:0};
+  for(const b of ST.bolts){b.life-=dt;b.x+=b.vx*dt;b.z+=b.vz*dt;b.mesh.position.set(b.x,1.2,b.z);if(b.k===1)b.mesh.rotation.y+=dt*9;
+    for(const e of ST.enemies){if(e.dead||e.invuln||b.hit.has(e.id))continue;const dx=b.x-e.x,dz=b.z-e.z;if(dx*dx+dz*dz<(.5+e.r)**2){
+      b.hit.add(e.id);_src.x=b.x-b.vx*.2;_src.z=b.z-b.vz*.2;hurtEnemy(e,b.dmg,rollCrit(b.critC),b.mul,_src);spawnParts(b.x,1.2,b.z,b.k===2?0x8FE9FF:0xFFB13D,3);
+      if(b.pierce>0)b.pierce--;else{b.life=0;}break;}}}
   ST.bolts=ST.bolts.filter(b=>{if(b.life>0)return true;b.mesh.visible=false;return false;});
 
   const mag2=ST.magnet*ST.magnet;
   const p2mag=p2co?(p2co.magnet||6)*(p2co.magnet||6):0;
-  // pick the nearest alive player as the target for a pickup; route XP to that player
-  function pickTarget(ox,oz){let who=1,tx=ST.px,tz=ST.pz,tm=mag2, hostOk=!ST.down;
-    if(p2co&&!p2co.down){const d1=(ST.px-ox)**2+(ST.pz-oz)**2,d2b=(p2co.px-ox)**2+(p2co.pz-oz)**2;
-      if(!hostOk||d2b<d1){who=2;tx=p2co.px;tz=p2co.pz;tm=p2mag;}}
-    else if(!hostOk){return null;}
-    return {who,tx,tz,tm};}
   for(const o of ST.orbs){o.mesh.rotation.y+=dt*3;o.mesh.position.y=.8+Math.sin(ST.t*4+o.ph)*.15;
-    const T=pickTarget(o.x,o.z);if(!T)continue;const dx=T.tx-o.x,dz=T.tz-o.z,d2=dx*dx+dz*dz;
+    const T=pickTarget(o.x,o.z,p2co,mag2,p2mag);if(!T)continue;const dx=T.tx-o.x,dz=T.tz-o.z,d2=dx*dx+dz*dz;
     if(o.pull>0||d2<T.tm){o.pull+=dt;const dd=Math.sqrt(d2)||1,sp=10+o.pull*40;
       o.x+=dx/dd*sp*dt;o.z+=dz/dd*sp*dt;o.mesh.position.x=o.x;o.mesh.position.z=o.z;
       if(dd<1.4){o.got=true;gainXp(o.v,T.who);}}}
   ST.orbs=ST.orbs.filter(o=>{if(!o.got)return true;o.mesh.visible=false;return false;});
 
   for(const c of ST.coinDrops){c.mesh.rotation.z+=dt*4;c.mesh.rotation.y+=dt*2;
-    const T=pickTarget(c.x,c.z);if(!T)continue;const dx=T.tx-c.x,dz=T.tz-c.z,d2=dx*dx+dz*dz;
+    const T=pickTarget(c.x,c.z,p2co,mag2,p2mag);if(!T)continue;const dx=T.tx-c.x,dz=T.tz-c.z,d2=dx*dx+dz*dz;
     if(d2<T.tm*1.6){const dd=Math.sqrt(d2)||1;c.x+=dx/dd*14*dt;c.z+=dz/dd*14*dt;c.mesh.position.x=c.x;c.mesh.position.z=c.z;
       if(dd<1.6){c.got=true;ST.coins++;sfx.coin();}}}
   ST.coinDrops=ST.coinDrops.filter(c=>{if(!c.got)return true;c.mesh.visible=false;return false;});
+  // hearts: walk over one to heal a quarter of your health
+  for(const h of ST.hearts){h.mesh.rotation.y+=dt*2.4;h.mesh.position.y=.9+Math.sin(ST.t*3+h.ph)*.2;const s=1+Math.sin(ST.t*7+h.ph)*.12;h.mesh.scale.set(s,s,s);
+    const T=pickTarget(h.x,h.z,p2co,mag2,p2mag);if(!T)continue;const dx=T.tx-h.x,dz=T.tz-h.z,d2=dx*dx+dz*dz;
+    if(d2<T.tm*1.4){const dd=Math.sqrt(d2)||1;h.x+=dx/dd*12*dt;h.z+=dz/dd*12*dt;h.mesh.position.x=h.x;h.mesh.position.z=h.z;
+      if(dd<1.7){h.got=true;const P=T.who===2?ST.p2:ST;const amt=Math.ceil(P.maxhp*.25);P.hp=Math.min(P.maxhp,P.hp+amt);sfx.heart();dmgNumber(P.px,2.6,P.pz,'+'+amt,'heal');spawnParts(P.px,1.2,P.pz,0xFF8FB0,12);}}}
+  ST.hearts=ST.hearts.filter(h=>{if(!h.got)return true;h.mesh.visible=false;h.mesh.scale.setScalar(1);return false;});
 
-  if(novaFx.t>0){novaFx.t-=dt;const p=1-novaFx.t/novaFx.max,r=novaFx.r*p;
-    novaRing.scale.set(r,r,r);novaRing.position.set(ST.px,.4,ST.pz);novaRing.material.opacity=(1-p)*.8;}
-  else novaRing.material.opacity=0;
-
-  stepParticles(dt);stepLashFx(dt);
+  stepParticles(dt);stepLashFx(dt);stepBlasts(dt);fxFrameEnd();
 
   const cx=ST.px, cz=ST.pz; // each player's camera follows their own character (not a joint midpoint)
   tmpV.set(cx,0,cz).add(CAM_OFF);
@@ -1616,12 +2108,14 @@ function update(dt){
 
   if(ST.hitFlash>0)ST.hitFlash=Math.max(0,ST.hitFlash-dt*3.2);
   flashEl.style.opacity=(ST.hitFlash*0.85).toFixed(3);
+  coldGlowEl.style.opacity=((ST.chillT>0?.7:0)+(ST.slowMul<1?.45:0)).toFixed(2);
 
   updateDamageNumbers(dt);updateHud();
 }
-const flashEl=$('flash');
-function aoeHit(x,z,r,dmg){if(!ST.down&&ST.iframe<=0&&((ST.px-x)**2+(ST.pz-z)**2)<r*r)hurtPlayer(dmg,1);
-  if(ST.coop&&ST.p2&&!ST.p2.down&&(ST.p2.iframe||0)<=0&&((ST.p2.px-x)**2+(ST.p2.pz-z)**2)<r*r)hurtPlayer(dmg,2);}
+const flashEl=$('flash'),coldGlowEl=$('coldGlow');
+function aoeHit(x,z,r,dmg,rIn){rIn=rIn||0;const inZ=(px,pz)=>{const d2=(px-x)**2+(pz-z)**2;return d2<r*r&&d2>=rIn*rIn;};
+  if(!ST.down&&ST.iframe<=0&&inZ(ST.px,ST.pz))hurtPlayer(dmg,1);
+  if(ST.coop&&ST.p2&&!ST.p2.down&&(ST.p2.iframe||0)<=0&&inZ(ST.p2.px,ST.p2.pz))hurtPlayer(dmg,2);}
 function hurtPlayer(dmg,who){who=who||1;
   if(ST.coop&&who===2){const p=ST.p2;const d=Math.max(1,Math.min(Math.round(dmg),Math.ceil(p.maxhp*0.45)));p.hp-=d;p.iframe=.7;
     spawnParts(p.px,1.2,p.pz,0xFF4F66,8);dmgNumber(p.px,2.6,p.pz,'-'+d,'player');
@@ -1683,27 +2177,33 @@ function tryCoopLU(){if(!ST.coop||!ST.isHost||coopLU.open)return;
       $('levelup').classList.add('hidden');coopLU.open=false;ST.luLock=false;netSend({t:'resume'});tryCoopLU();});
     $('levelup').classList.remove('hidden');sfx.lvl();netSend({t:'pause'});return;}
   if(ST.p2&&(ST.p2.pendingLU||0)>0){ST.p2.pendingLU--;coopLU.open=true;coopLU.who=2;ST.luLock=true;
-    const picks=pickThree(buildPoolFrom(ST.p2.weapons,ST.p2.passives,['orbit']));coopLU.picks=picks;
+    const picks=pickThree(buildPoolFrom(ST.p2.weapons,ST.p2.passives));coopLU.picks=picks;
     netSend({t:'offer',picks:picks.map(p=>({kind:p.kind,id:p.id})),w:ST.p2.weapons,p:ST.p2.passives,lvl:ST.p2.level});
     // don't freeze the host forever if the partner is AFK — auto-pick after a grace period
     clearCoopTimer();coopLU.timer=setTimeout(()=>hostApplyGuestPick(0),20000);
     $('coopwait').classList.remove('hidden');sfx.lvl();return;}}
-function hostApplyGuestPick(i){if(coopLU.who!==2||!coopLU.picks)return;clearCoopTimer();const pk=coopLU.picks[i]||coopLU.picks[0];
-  applyPickTo(pk,ST.p2,applyPassivesP2);$('coopwait').classList.add('hidden');coopLU.open=false;ST.luLock=false;netSend({t:'resume'});tryCoopLU();}
+function hostApplyGuestPick(i){if(!coopLU.open||coopLU.who!==2||!coopLU.picks)return;clearCoopTimer();const pk=coopLU.picks[i]||coopLU.picks[0];
+  coopLU.picks=null;coopLU.who=0;coopLU.open=false; // consume the offer so a late/duplicate 'pick' can't apply twice
+  applyPickTo(pk,ST.p2,applyPassivesP2);$('coopwait').classList.add('hidden');ST.luLock=false;netSend({t:'resume'});tryCoopLU();}
 function buildChips(){const el=$('chips');el.innerHTML='';
   for(const id in ST.weapons){const s=document.createElement('span');s.className='chip';s.innerHTML=WEAPONS[id].name+' <b>'+ST.weapons[id]+'</b>';el.appendChild(s);}}
 
 /* ============ HUD ============ */
-function updateHud(){$('hpbar').firstElementChild.style.width=(100*clamp(ST.hp/ST.maxhp,0,1))+'%';
-  $('hptext').textContent=Math.ceil(ST.hp)+' / '+ST.maxhp;
-  $('xpbar').firstElementChild.style.width=(100*clamp(ST.xp/ST.xpNext,0,1))+'%';
-  $('timer').textContent=fmtTime(ST.t);$('lvlbadge').textContent=ST.level;
-  $('val-kills').textContent=ST.kills;$('val-ember').textContent=ST.coins;
-  $('waveInfo').textContent='LV '+ST.wlevel+' · WAVE '+ST.wave+(ST.isBossWave?' · BOSS':'')+(ST.waveState==='break'&&ST.wave>0?' · NEXT IN '+Math.ceil(Math.max(0,ST.waveTimer))+'s':'');
-  if(ST.bossE&&!ST.bossE.dead)$('bossbar').querySelector('.bb-bar>span').style.width=(100*clamp(ST.bossE.hp/ST.bossE.maxhp,0,1))+'%';
+// write DOM text only when it changes (the HUD runs every frame over a WebGL canvas)
+const HUD_EL={};const hudEl=id=>HUD_EL[id]||(HUD_EL[id]=$(id));
+const setTxt=(id,v)=>{const el=hudEl(id);if(el._v!==v){el._v=v;el.textContent=v;}};
+const setW=(id,v)=>{const el=hudEl(id).firstElementChild;v=v.toFixed(1)+'%';if(el._w!==v){el._w=v;el.style.width=v;}};
+function updateHud(){setW('hpbar',100*clamp(ST.hp/ST.maxhp,0,1));
+  setTxt('hptext',Math.max(0,Math.ceil(ST.hp))+' / '+ST.maxhp);
+  setW('xpbar',100*clamp(ST.xp/ST.xpNext,0,1));
+  setTxt('timer',fmtTime(ST.t));setTxt('lvlbadge',String(ST.level));
+  setTxt('val-kills',String(ST.kills));setTxt('val-ember',String(ST.coins));
+  setTxt('waveInfo','LV '+ST.wlevel+' · WAVE '+ST.wave+(ST.isBossWave?' · BOSS':'')+(ST.waveState==='break'&&ST.wave>0?' · NEXT IN '+Math.ceil(Math.max(0,ST.waveTimer))+'s':''));
+  if(ST.bossE&&!ST.bossE.dead)setW('bossbarFill',100*clamp(ST.bossE.hp/ST.bossE.maxhp,0,1));
   const of=ST.outFrac||0;boundGlowEl.style.opacity=(of*0.62).toFixed(3);boundWarnEl.style.display=of>0.12?'block':'none';}
 const boundGlowEl=$('boundGlow'),boundWarnEl=$('boundWarn');
-/* ---- cycling tips (corner) ---- */
+$('bossbar').querySelector('.bb-bar').id='bossbarFill';
+/* ---- cycling tips (corner): general tips plus the current biome's own ---- */
 const TIPS=[
   'Kite bosses in a circle — most of their attacks are dodgeable.',
   'Red circles are incoming hits. Step off them before they flash.',
@@ -1714,14 +2214,17 @@ const TIPS=[
   'The red ring is the arena edge — leaving it drains your health.',
   'Stack the same weapon to make it hit far harder.',
   'Green puddles linger — don’t stand in them.',
-  'Hearts heal you; coins are extra ember.',
+  'Pink hearts drop from elites and bosses — they heal a quarter of your health.',
   'A stronger build makes bosses tougher, so keep dodging.',
+  'A ring-shaped mark means the safe spot is its centre — or well outside it.',
+  'Bosses enrage below a third of their health: faster, angrier, almost done.',
   'Customize your icon in Profile — it shows on the leaderboard.',
 ];
 let _tipI=Math.floor(Math.random()*TIPS.length);
 const tipEl=$('tip'),tipTextEl=$('tipText');
 function showTip(){tipEl.style.opacity='0';
-  setTimeout(()=>{tipTextEl.textContent=TIPS[_tipI%TIPS.length];_tipI++;if(state==='run')tipEl.style.opacity='1';},380);}
+  setTimeout(()=>{const bt=(ST&&biomeById(ST.biome).tips)||[];const pool=_tipI%3===1&&bt.length?bt:TIPS;
+    tipTextEl.textContent=pool[(pool===bt?Math.floor(_tipI/3):_tipI)%pool.length];_tipI++;if(state==='run')tipEl.style.opacity='1';},380);}
 setInterval(()=>{if(state==='run')showTip();else tipEl.style.opacity='0';},9000);
 function showBossBar(b){const el=$('bossbar');el.classList.remove('hidden');
   $('bossName').textContent=(ETYPE[b.type].name||'BOSS').toUpperCase();
@@ -1739,7 +2242,8 @@ function setState(s){state=s;
   $('gameover').classList.toggle('hidden',s!=='over');
   if(s==='pause'&&ST){const parts=[];for(const id in ST.weapons)parts.push(WEAPONS[id].name+' '+ST.weapons[id]);
     for(const id in ST.passives)parts.push(PASSIVES[id].name+' '+ST.passives[id]);$('pauseBuild').textContent=parts.join(' · ');}
-  if(s!=='run'){player2.visible=false;pmark.visible=false;p2mark.visible=false;}
+  if(s!=='run'){player2.visible=false;pmark.visible=false;p2mark.visible=false;endJoy();}
+  if(s==='home'&&(!ST||ST.over))setBiome('ember',false);
   if(s==='home'){clearScene();renderHome();}if(s==='skins')renderSkins();if(s==='forge')renderForge();if(s==='awards')renderAwards();
   if(s==='profile')renderProfile();if(s==='ranks')renderLeaderboard();if(s==='levels')renderLevels();if(s==='account')renderAccount();if(s==='feedback')$('fbMsg').textContent='';
   syncWallets();
@@ -1753,15 +2257,23 @@ $('btnJoinGo').onclick=()=>{const c=($('joinCode').value||'').toUpperCase().trim
 $('btnDuoStart').onclick=()=>{if(NET.role==='host'&&NET.peerHere)startCoopHost();};
 $('btnDuoBack').onclick=()=>{netReset();player2.visible=false;setState('home');};
 const MOD_LABEL={swarm:'⚡ Swarm',fast:'💨 Fast',elite:'☠ Elite'};
+// the campaign path, grouped into biome chapters (a header per biome, its levels beneath; finales highlighted)
 function renderLevels(){const path=$('levelPath');if(!path)return;const unlocked=SAVE.campaign.unlocked;
   $('levelsNote').textContent='Cleared '+(unlocked-1)+' · next is '+campEntry(unlocked).name;
-  const show=Math.max(unlocked+2,10);path.innerHTML='';
+  const show=Math.max(unlocked+2,CAMPAIGN.length);path.innerHTML='';let lastBiome=null;
   for(let n=1;n<=show;n++){const state=n<unlocked?'done':(n===unlocked?'current':'locked');
-    if(n>1){const c=document.createElement('div');c.className='lvconn';path.appendChild(c);}
-    const node=document.createElement('button');node.className='lvnode '+state;
-    const ce=campEntry(n),boss=ETYPE[ce.boss].name,twist=ce.mod?(' · '+MOD_LABEL[ce.mod]):'';
-    node.innerHTML='<div class="num">'+(state==='done'?'✓':(state==='locked'?'🔒':n))+'</div>'+
-      '<div class="li"><div class="ln">'+n+'. '+ce.name+'</div><div class="ld">'+(state==='locked'?'Locked':('boss: '+boss+twist))+'</div></div>';
+    const ce=campEntry(n),b=BIOMES[ce.biome],boss=ETYPE[ce.boss].name,twist=ce.mod?(' · '+MOD_LABEL[ce.mod]):'';
+    const finale=n<=CAMPAIGN.length&&(n===CAMPAIGN.length||CAMPAIGN[n].biome!==ce.biome);
+    if(ce.biome!==lastBiome){lastBiome=ce.biome;
+      const first=n,chapterDone=unlocked>first&&(n>CAMPAIGN.length||unlocked>first+2);const locked=state==='locked';
+      const h=document.createElement('div');h.className='bhead'+(locked?' locked':'')+(chapterDone?' done':'');
+      h.style.setProperty('--b1',b.ui[0]);h.style.setProperty('--b2',b.ui[1]);h.style.setProperty('--b3',b.ui[2]);
+      h.innerHTML='<div class="bk">'+(n>CAMPAIGN.length?'Endless · ':'Chapter '+(BIOME_ORDER.indexOf(ce.biome)+1)+' · ')+'3 levels</div><div class="bn">'+b.name+'</div><div class="bt">'+b.tag+'</div>';
+      path.appendChild(h);}
+    else{const c=document.createElement('div');c.className='lvconn';path.appendChild(c);}
+    const node=document.createElement('button');node.className='lvnode '+state+(finale?' finale':'');node.style.setProperty('--bsw',b.accent);
+    node.innerHTML='<div class="bsw"></div><div class="num">'+(state==='done'?'✓':(state==='locked'?'🔒':n))+'</div>'+
+      '<div class="li"><div class="ln">'+n+'. '+ce.name+'</div><div class="ld">'+(state==='locked'?'Locked':((finale?'finale · ':'boss: ')+boss+twist))+'</div></div>';
     if(state!=='locked')node.onclick=()=>startRun('campaign',n);
     path.appendChild(node);}
 }
@@ -1832,9 +2344,11 @@ async function doLogout(){const t=SAVE.account&&SAVE.account.token;SAVE.account=
 // on boot: if we have a stored session, confirm it's still valid (else clear it)
 async function verifyAccount(){if(!(SAVE.account&&SAVE.account.token)){acctBarText();return;}
   try{const r=await fetch('/api/me',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:SAVE.account.token})});
-    const j=await r.json().catch(()=>({}));
-    if(!(j&&j.user)){SAVE.account=null;persist();}
-    else if(SAVE.account.username!==j.user.username){SAVE.account.username=j.user.username;persist();}
+    const j=await r.json().catch(()=>null);
+    // only an authoritative "no such session" signs you out — a 5xx / cold start / bad gateway keeps the session
+    if(r.ok&&j&&Object.prototype.hasOwnProperty.call(j,'user')){
+      if(!j.user){SAVE.account=null;persist();}
+      else if(SAVE.account.username!==j.user.username){SAVE.account.username=j.user.username;persist();}}
   }catch(e){}
   acctBarText();}
 function renderBoard(board,global,myBest){
@@ -1936,11 +2450,14 @@ $('btnClaim').onclick=()=>{const b=$('btnClaim');
   $('dailyModal').classList.add('hidden');renderHome();};
 
 /* ============ run lifecycle ============ */
-function clearScene(){for(const t in enemyPool)for(const g of enemyPool[t]){g.visible=false;if(g.userData.hpbar)g.userData.hpbar.visible=false;}
+function clearScene(){for(const t in enemyPool)for(const g of enemyPool[t])releaseEnemy(g);
   for(const m of boltMeshes)m.visible=false;for(const m of orbMeshes)m.visible=false;
   for(const m of lanceMeshes)m.visible=false;for(const m of sparkMeshes)m.visible=false;for(const o of lashPool){o.m.visible=false;o.life=0;}
-  for(const m of coinMeshes)m.visible=false;for(const m of bladeMeshes)m.visible=false;for(const m of ebulletMeshes)m.visible=false;
-  for(const p of parts)p.life=0;for(const d of dnActive)d.el.style.opacity='0';dnActive.length=0;flashEl.style.opacity='0';}
+  for(const m of coinMeshes)m.visible=false;for(const m of bladeMeshes)m.visible=false;for(const m of bladeMeshes2)m.visible=false;for(const m of ebulletMeshes){m.visible=false;m.scale.setScalar(1);}
+  for(const m of heartMeshes){m.visible=false;m.scale.setScalar(1);}for(const m of mineMeshes)m.visible=false;for(const m of beamMeshes)m.visible=false;
+  for(const b of blastPool){b.t=0;b.m.visible=false;}fxFrameEnd();for(const m of teleMeshes)releaseTele(m);
+  for(const p of parts)p.life=0;for(const d of dnActive){d.el.style.opacity='0';d.life=0;}dnActive.length=0;flashEl.style.opacity='0';coldGlowEl.style.opacity='0';
+  scene.fog.near=PAL.near;scene.fog.far=PAL.far;}
 let lastRun={mode:'free',clevel:1},pendingStart={mode:'free',clevel:1};
 const START_CHOICES=['bolt','lance','chain'];
 // entry point from menus: let the player choose a starting ability first
@@ -1953,16 +2470,19 @@ function openStartPick(){const wrap=$('spCards');wrap.innerHTML='';
     wrap.appendChild(c);});
   $('startpick').classList.remove('hidden');}
 function doStartRun(mode,clevel){mode=mode||'free';clevel=clevel||1;lastRun={mode,clevel};
+  $('dailyModal').classList.add('hidden');endJoy();
   clearScene();newRun(mode,clevel);applyPassives();buildChips();
-  hideBossBar();for(const m of teleMeshes)m.material.opacity=0;clearTelegraphs();
+  hideBossBar();clearTelegraphs();
   boundGlowEl.style.opacity='0';boundWarnEl.style.display='none';
-  camera.position.set(CAM_OFF.x,CAM_OFF.y,CAM_OFF.z);setState('run');showTip();}
+  camera.position.set(CAM_OFF.x,CAM_OFF.y,CAM_OFF.z);setState('run');showTip();
+  const b=biomeById(ST.biome);setTimeout(()=>{if(state==='run'&&ST&&ST.wave===0)bannerMsg(b.name,mode==='campaign'?ST.cname:b.tag,'biome');},150);}
 function winCampaign(){if(ST.over)return;ST.won=true;
-  for(const e of ST.enemies)if(!e.dead)killEnemy(e);ST.bossE=null;hideBossBar();clearTelegraphs();
+  for(const e of ST.enemies)if(!e.dead)despawnEnemy(e);ST.bossE=null;hideBossBar();clearTelegraphs();
   if(SAVE.campaign.unlocked<ST.clevel+1){SAVE.campaign.unlocked=ST.clevel+1;persist();}
   bannerMsg(ST.cname||('LEVEL '+ST.clevel),'COMPLETE');endRun();}
 function endRun(){if(ST.over)return;ST.over=true;
   ST.luLock=false;coopLU.open=false;clearCoopTimer();$('levelup').classList.add('hidden');$('coopwait').classList.add('hidden');
+  flashEl.style.opacity='0';coldGlowEl.style.opacity='0';boundGlowEl.style.opacity='0';boundWarnEl.style.display='none';hideBeams(1);hideBeams(2);endJoy();
   if(ST.coop&&ST.isHost){netBroadcast();player2.visible=false;}
   const earned=Math.floor((ST.coins+Math.floor(ST.t/20)+ST.level*2)*ST.greed);SAVE.coins+=earned;
   let best=false;if(ST.t>SAVE.bestTime){SAVE.bestTime=ST.t;best=true;}if(ST.kills>SAVE.bestKills){SAVE.bestKills=ST.kills;best=true;}
@@ -1972,8 +2492,8 @@ function endRun(){if(ST.over)return;ST.over=true;
   if(ST.level>SAVE.stats.bestLevel)SAVE.stats.bestLevel=ST.level;
   const P=SAVE.missions.prog;P.kills+=ST.kills;P.time+=ST.t;P.ember+=earned;P.runs+=1;if(ST.level>P.level)P.level=ST.level;
   checkMissions();checkAchievements();
-  // leaderboard: only Free Play runs count toward the global board
-  if(ST.mode==='free'){const sc=scoreOf(ST.t,ST.kills,ST.level);
+  // leaderboard: only SOLO Free Play runs count toward the global board (a duo's kills are two players' work)
+  if(ST.mode==='free'&&!ST.coop&&!ST.wasCoop){const sc=scoreOf(ST.t,ST.kills,ST.level);
     SAVE.scores.push({t:Math.floor(ST.t),k:ST.kills,l:ST.level,score:sc});
     SAVE.scores.sort((a,b)=>b.score-a.score);SAVE.scores=SAVE.scores.slice(0,10);
     submitScore({t:Math.floor(ST.t),k:ST.kills,l:ST.level,score:sc});}
@@ -1985,7 +2505,7 @@ function endRun(){if(ST.over)return;ST.over=true;
     '<div class="c"><div class="k">Kills</div><div class="v num">'+ST.kills+'</div></div>'+
     '<div class="c"><div class="k">Player Lv</div><div class="v num">'+ST.level+'</div></div>'+
     '<div class="c"><div class="k">Ember Banked</div><div class="v num gold">+'+earned+'</div></div>';
-  $('goBest').classList.toggle('hidden',!(best&&ST.mode==='free'));
+  $('goBest').classList.toggle('hidden',!(best&&ST.mode==='free'&&!ST.wasCoop));
   $('btnRetry').textContent=won?'Next Level':'Run It Back';
   if(won)beep(520,.12,'sine',.06,260),setTimeout(()=>beep(780,.16,'sine',.06,300),90);else sfx.over();
   setTimeout(()=>setState('over'),won?900:700);
@@ -2029,7 +2549,7 @@ $('btnResume').onclick=()=>setState('run');$('btnQuit').onclick=()=>endRun();
 
 /* ============ ambient home scene ============ */
 let idleT=0;
-function idleUpdate(dt){idleT+=dt;
+function idleUpdate(dt){idleT+=dt;stepBiome(dt);stepAmbient(dt,0,0);player.visible=true;
   player.position.set(0,1.7+Math.sin(idleT*1.4)*.16,0);
   pcore.rotation.y+=dt*.5;pcore.rotation.x+=dt*.25;pshell.rotation.y-=dt*.35;pshell.scale.setScalar(1+Math.sin(idleT*2)*.03);
   emberLight.position.set(0,2.6,0);
@@ -2040,37 +2560,55 @@ function idleUpdate(dt){idleT+=dt;
 
 /* ============ Duos (co-op) ============ */
 const ENEMY_TYPES=Object.keys(ETYPE);
-const NET={ws:null,role:null,code:null,active:false,peerHere:false,guestInput:{mx:0,mz:0},state:null,acc:0,inAcc:0};
-const GUEST={px:6,pz:0,enemies:new Map(),overShown:false};
+const NET={ws:null,role:null,code:null,active:false,peerHere:false,guestInput:{mx:0,mz:0},state:null,acc:0,inAcc:0,fx:[],guestStart:'bolt'};
+const GUEST={px:6,pz:0,enemies:new Map(),overShown:false,lastHp:null,wasDown:false,flash:0,biome:null};
 function netUrl(){return (location.protocol==='https:'?'wss://':'ws://')+location.host+'/duo';}
-function netReset(){if(NET.ws){try{NET.ws.onclose=null;NET.ws.close();}catch(e){}}NET.ws=null;NET.role=null;NET.code=null;NET.active=false;NET.peerHere=false;NET.state=null;NET.guestInput={mx:0,mz:0};}
+function netReset(){if(NET.ws){try{NET.ws.onclose=null;NET.ws.close();}catch(e){}}NET.ws=null;NET.role=null;NET.code=null;NET.active=false;NET.peerHere=false;NET.state=null;NET.guestInput={mx:0,mz:0};NET.fx.length=0;}
 function netConnect(then){netReset();const ws=new WebSocket(netUrl());NET.ws=ws;
   ws.onopen=()=>then&&then();
-  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data);}catch(_){return;}netMsg(m);};
-  ws.onclose=()=>{if(NET.active)peerLeft('Connection lost');};
+  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data);}catch(_){return;}if(m&&typeof m==='object')netMsg(m);};
+  ws.onclose=()=>{if(NET.active)peerLeft('Connection lost');
+    else if(state==='duos'){NET.peerHere=false;NET.role=null;NET.code=null;$('duoLobby').classList.add('hidden');$('duoPick').classList.remove('hidden');$('duoMsg').textContent='Connection lost — host or join again.';}};
   ws.onerror=()=>{$('duoMsg').textContent='Connection error — try again.';};}
 function netSend(o){if(NET.ws&&NET.ws.readyState===1){try{NET.ws.send(JSON.stringify(o));}catch(e){}}}
-function netMsg(m){
-  if(m.t==='created'){NET.role='host';NET.code=m.code;showLobby();}
-  else if(m.t==='joined'){NET.role='guest';NET.code=m.code;$('duoMsg').textContent='';showLobby();}
-  else if(m.t==='joinfail'){$('duoMsg').textContent=m.reason||'Could not join.';}
-  else if(m.t==='peer'){if(m.ev==='joined'){NET.peerHere=true;showLobby();}else peerLeft('Partner left the room.');}
-  else if(m.t==='start'){startCoopGuest();}
-  else if(m.t==='state'){NET.state=m;}
-  else if(m.t==='input'){NET.guestInput.mx=m.mx;NET.guestInput.mz=m.mz;}
-  // ---- co-op level-up sync ----
-  else if(m.t==='offer'){ // guest: it's my turn to pick an upgrade
+// one-shot visual events the guest can't infer from state (nova, lash, mine blasts); flushed with the next broadcast
+function netFx(){if(!NET.active||!ST||!ST.isHost||NET.fx.length>=24)return;const a=[];for(let i=0;i<arguments.length;i++)a.push(Math.round(arguments[i]*10)/10);NET.fx.push(a);}
+const numOr=(v,lo,hi)=>{v=+v;return Number.isFinite(v)?clamp(v,lo,hi):0;};
+function netMsg(m){if(!m||typeof m!=='object')return;const t=m.t;
+  if(t==='created'){NET.role='host';NET.code=m.code;showLobby();}
+  else if(t==='joined'){NET.role='guest';NET.code=m.code;$('duoMsg').textContent='';showLobby();netSend({t:'hello',sw:SAVE.startWeapon||'bolt'});}
+  else if(t==='joinfail'){$('duoMsg').textContent=String(m.reason||'Could not join.').slice(0,80);}
+  else if(t==='peer'){if(m.ev==='joined'){NET.peerHere=true;showLobby();}else peerLeft('Partner left the room.');}
+  // ---- messages only the HOST may act on (relay forwards everything, so gate by role) ----
+  else if(t==='input'){if(NET.role!=='host')return;NET.guestInput.mx=numOr(m.mx,-1,1);NET.guestInput.mz=numOr(m.mz,-1,1);}
+  else if(t==='pick'){if(NET.role!=='host')return;hostApplyGuestPick(m.i|0);} // host: apply guest's chosen upgrade
+  else if(t==='hello'){if(NET.role!=='host')return;NET.guestStart=START_CHOICES.includes(m.sw)?m.sw:'bolt';}
+  // ---- messages only the GUEST may act on ----
+  else if(t==='start'){if(NET.role!=='guest')return;startCoopGuest();}
+  else if(t==='state'){if(NET.role!=='guest')return;NET.state=m;}
+  else if(t==='offer'){if(NET.role!=='guest')return; // guest: it's my turn to pick an upgrade
+    const picks=(Array.isArray(m.picks)?m.picks:[]).filter(p=>p&&(p.kind==='heal'||(p.kind==='w'&&WEAPONS[p.id])||(p.kind==='p'&&PASSIVES[p.id]))).slice(0,3);
+    if(!picks.length)picks.push({kind:'heal'});
     coopLU.open=true;coopLU.who=2;$('coopwait').classList.add('hidden');
-    $('luEyebrow').innerHTML='Level <span id="luLevel">'+(m.lvl||2)+'</span> — choose an upgrade';
-    renderLuCards(m.picks,m.w||{},m.p||{},(pk,idx)=>{netSend({t:'pick',i:idx});$('levelup').classList.add('hidden');$('coopwait').classList.remove('hidden');});
+    $('luEyebrow').textContent='Level '+((m.lvl|0)||2)+' — choose an upgrade';
+    renderLuCards(picks,(m.w&&typeof m.w==='object')?m.w:{},(m.p&&typeof m.p==='object')?m.p:{},(pk,idx)=>{netSend({t:'pick',i:idx});$('levelup').classList.add('hidden');$('coopwait').classList.remove('hidden');});
     $('levelup').classList.remove('hidden');sfx.lvl();}
-  else if(m.t==='pause'){coopLU.open=true;coopLU.who=1;$('levelup').classList.add('hidden');$('coopwait').classList.remove('hidden');}
-  else if(m.t==='resume'){coopLU.open=false;$('levelup').classList.add('hidden');$('coopwait').classList.add('hidden');}
-  else if(m.t==='pick'){hostApplyGuestPick(m.i|0);} // host: apply guest's chosen upgrade
+  else if(t==='pause'){if(NET.role!=='guest')return;coopLU.open=true;coopLU.who=1;$('levelup').classList.add('hidden');$('coopwait').classList.remove('hidden');}
+  else if(t==='resume'){if(NET.role!=='guest')return;coopLU.open=false;$('levelup').classList.add('hidden');$('coopwait').classList.add('hidden');}
 }
-function peerLeft(msg){ coopLU.open=false;clearCoopTimer();if(ST)ST.luLock=false;$('coopwait').classList.add('hidden');$('levelup').classList.add('hidden');
-  if(NET.active){toast('Duo ended',msg,'teal'); if(NET.role==='host'&&ST&&!ST.over){ST.coop=false;player2.visible=false;} else if(NET.role==='guest'){ if(state==='run')setState('home'); } NET.active=false; }
-  if(state==='duos'){NET.peerHere=false;showLobby();$('lobbyStatus').textContent=msg;} }
+function peerLeft(msg){const lostOwnPick=coopLU.open&&coopLU.who===1&&NET.role==='host';
+  coopLU.open=false;clearCoopTimer();if(ST)ST.luLock=false;$('coopwait').classList.add('hidden');$('levelup').classList.add('hidden');
+  if(NET.active){toast('Duo ended',msg,'teal');
+    if(NET.role==='host'&&ST&&!ST.over){ // carry on solo: stand the host back up and restore any pick they were making
+      if(ST.down){ST.down=false;ST.hp=Math.max(ST.hp,Math.ceil(ST.maxhp*.5));}
+      ST.coop=false;player2.visible=false;p2mark.visible=false;hideBeams(2);for(const m of bladeMeshes2)m.visible=false;
+      if(ST.p2&&ST.p2.mines)for(const mn of ST.p2.mines)mn.mesh.visible=false;
+      if(lostOwnPick){ST.pendingLU++;ST.pendingLU--;openLevelUp();}}
+    else if(NET.role==='guest'){if(state==='run')setState('home');}
+    NET.active=false;}
+  if(state==='duos'){NET.peerHere=false;showLobby();$('lobbyStatus').textContent=msg;}
+  else netReset(); // don't leave a stale role behind — it would hijack the next solo run's Retry button
+}
 function showLobby(){$('duoPick').classList.add('hidden');$('duoLobby').classList.remove('hidden');$('roomCode').textContent=NET.code||'----';
   if(NET.role==='host'){$('btnDuoStart').classList.remove('hidden');$('btnDuoStart').disabled=!NET.peerHere;$('lobbyStatus').textContent=NET.peerHere?'Partner connected — press Start!':'Waiting for a friend to join…';}
   else{$('btnDuoStart').classList.add('hidden');$('lobbyStatus').textContent='Joined room '+(NET.code||'')+' — waiting for host to start…';}}
@@ -2078,62 +2616,54 @@ function nearestPlayer(x,z){ if(!ST.coop)return{x:ST.px,z:ST.pz,who:1};
   const d1=ST.down?1e9:(x-ST.px)**2+(z-ST.pz)**2, d2=ST.p2.down?1e9:(x-ST.p2.px)**2+(z-ST.p2.pz)**2;
   return d2<d1?{x:ST.p2.px,z:ST.p2.pz,who:2}:{x:ST.px,z:ST.pz,who:1};}
 /* host: start a co-op run */
+function newP2(start){return {px:6,pz:0,hp:100,maxhp:100,down:false,timers:{bolt:0,nova:0,scatter:0,lash:0,lance:0,chain:0,mine:0,beam:0},
+    level:1,xp:0,xpNext:12,pendingLU:0,weapons:{[START_CHOICES.includes(start)?start:'bolt']:1},passives:{},iframe:0,
+    slowMul:1,pullX:0,pullZ:0,chillT:0,faceX:1,faceZ:0,mines:[],beamAng:0,orbitAng:0};}
 function startCoopHost(){NET.active=true;NET.role='host';netSend({t:'start'});
   clearScene();newRun('free');applyPassives();buildChips();
-  hideBossBar();for(const m of teleMeshes)m.material.opacity=0;clearTelegraphs();
+  hideBossBar();clearTelegraphs();
   boundGlowEl.style.opacity='0';boundWarnEl.style.display='none';
-  ST.coop=true;ST.isHost=true;ST.down=false;ST.luLock=false;coopLU.open=false;coopLU.who=0;
-  ST.p2={px:6,pz:0,hp:100,maxhp:100,down:false,timers:{bolt:0,nova:0,scatter:0,lash:0},
-    level:1,xp:0,xpNext:12,pendingLU:0,weapons:{bolt:1},passives:{}};
+  ST.coop=true;ST.wasCoop=true;ST.isHost=true;ST.down=false;ST.luLock=false;coopLU.open=false;coopLU.who=0;
+  ST.p2=newP2(NET.guestStart); // the partner starts with the ability THEY chose
   applyPassivesP2();
   player2.visible=true;camera.position.set(CAM_OFF.x,CAM_OFF.y,CAM_OFF.z);setState('run');showTip();}
 /* guest: render the host's world, control own player only */
-function startCoopGuest(){NET.active=true;NET.role='guest';GUEST.px=6;GUEST.pz=0;GUEST.overShown=false;
+function startCoopGuest(){NET.active=true;NET.role='guest';GUEST.px=6;GUEST.pz=0;GUEST.overShown=false;GUEST.lastHp=null;GUEST.wasDown=false;GUEST.flash=0;GUEST.biome=null;
   coopLU.open=false;coopLU.who=0;$('levelup').classList.add('hidden');$('coopwait').classList.add('hidden');
-  clearScene();for(const [id,ge] of GUEST.enemies)ge.g.visible=false;GUEST.enemies.clear();
-  player2.visible=true;player.visible=true;setState('run');showTip();}
-function fireP2(dt){const p=ST.p2,T=p.timers,W=p.weapons,cd=p.cdMul||1,mul=p.dmgMul||1;if(p.down)return;
-  if(W.bolt){const s=WEAPONS.bolt.stat(W.bolt);T.bolt-=dt;
-    if(T.bolt<=0){let best=null,bd=62*62;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z,d=dx*dx+dz*dz;if(d<bd){_proj.set(e.x,e.y,e.z).project(camera);if(_proj.z<1&&Math.abs(_proj.x)<1.1&&Math.abs(_proj.y)<1.1){bd=d;best=e;}}}
-      if(best){T.bolt=s.cd*cd;const base=Math.atan2(best.z-p.pz,best.x-p.px);
-        for(let i=0;i<s.count;i++){const a=base+(i-(s.count-1)/2)*.16;const bm=take(boltMeshes);if(!bm)break;bm.visible=true;bm.position.set(p.px,1.2,p.pz);
-          ST.bolts.push({mesh:bm,x:p.px,z:p.pz,vx:Math.cos(a)*34,vz:Math.sin(a)*34,dmg:s.dmg,pierce:s.pierce,life:1.6,mul});}}}}
-  if(W.nova){const s=WEAPONS.nova.stat(W.nova);T.nova=(T.nova||0)-dt;
-    if(T.nova<=0){T.nova=s.cd*cd;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z;if(dx*dx+dz*dz<(s.radius+e.r)**2)hurtEnemy(e,s.dmg,undefined,mul);}}}
-  const crit=p.crit||.05;
-  if(W.scatter){const s=WEAPONS.scatter.stat(W.scatter);T.scatter=(T.scatter||0)-dt;
-    if(T.scatter<=0){T.scatter=s.cd*cd;doScatter(p.px,p.pz,s,mul,crit);}}
-  if(W.lash){const s=WEAPONS.lash.stat(W.lash);T.lash=(T.lash||0)-dt;
-    if(T.lash<=0){T.lash=s.cd*cd;let best=null,bd=(s.range+3)**2;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z,d=dx*dx+dz*dz;if(d<bd){bd=d;best=e;}}
-      doLash(p.px,p.pz,s,mul,best?best.x-p.px:1,best?best.z-p.pz:0,crit);}}
-  if(W.lance){const s=WEAPONS.lance.stat(W.lance);T.lance=(T.lance||0)-dt;
-    if(T.lance<=0){let best=null,bd=200*200;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z,dd=dx*dx+dz*dz;if(dd<bd){bd=dd;best=e;}}
-      if(best){T.lance=s.cd*cd;doLance(p.px,p.pz,s,mul,best.x-p.px,best.z-p.pz,crit);}}}
-  if(W.chain){const s=WEAPONS.chain.stat(W.chain);T.chain=(T.chain||0)-dt;
-    if(T.chain<=0){let best=null,bd=(s.range+4)**2;for(const e of ST.enemies){const dx=p.px-e.x,dz=p.pz-e.z,dd=dx*dx+dz*dz;if(dd<bd){bd=dd;best=e;}}
-      if(best){T.chain=s.cd*cd;doChain(best,p.px,p.pz,s,mul,crit);}}}}
+  clearScene();GUEST.enemies.clear();
+  $('chips').innerHTML='<span class="chip">'+WEAPONS[START_CHOICES.includes(SAVE.startWeapon)?SAVE.startWeapon:'bolt'].name+' <b>1</b></span>';$('timer').textContent='00:00';
+  setBiome('ember',false);player2.visible=true;player.visible=true;setState('run');showTip();}
+function fireP2(dt){const p=ST.p2;if(p.down){hideBeams(2);return;}fireFor(p,2,dt);}
+const R1=v=>Math.round(v*10)/10;
 function netBroadcast(){if(!NET.active||!ST||!ST.isHost)return;
-  const en=[];for(const e of ST.enemies){if(e.dead)continue;en.push([e.id,ENEMY_TYPES.indexOf(e.type),Math.round(e.x*10)/10,Math.round(e.z*10)/10,Math.max(0,Math.min(255,Math.round(255*e.hp/e.maxhp)))]);if(en.length>=60)break;}
-  const orbs=[];for(const o of ST.orbs){orbs.push([Math.round(o.x),Math.round(o.z)]);if(orbs.length>=40)break;}
-  const tg=ST.telegraphs.map(t=>[Math.round(t.x),Math.round(t.z),Math.round(t.r*10)/10,t.linger?1:0]);
-  const bo=[];for(const b of ST.bolts){bo.push([Math.round(b.x*10)/10,Math.round(b.z*10)/10]);if(bo.length>=64)break;}
-  const eb=[];for(const b of ST.ebullets){eb.push([Math.round(b.x*10)/10,Math.round(b.z*10)/10]);if(eb.length>=50)break;}
-  netSend({t:'state',p1:[Math.round(ST.px*10)/10,Math.round(ST.pz*10)/10,Math.round(ST.hp),ST.maxhp,ST.down?1:0],
-    p2:[Math.round(ST.p2.px*10)/10,Math.round(ST.p2.pz*10)/10,Math.round(ST.p2.hp),ST.p2.maxhp,ST.p2.down?1:0],
-    en,orbs,tg,bo,eb,w:ST.wave,l:ST.wlevel,b:ST.isBossWave?1:0,
+  // every live enemy goes out (MAXE ≤ 80 × 5 small ints) — anything the guest can't see can't be dodged
+  const en=[];for(const e of ST.enemies){if(e.dead||e.invuln&&!e.g.visible)continue;en.push([e.id,ENEMY_TYPES.indexOf(e.type),R1(e.x),R1(e.z),Math.max(0,Math.min(255,Math.round(255*e.hp/e.maxhp))),e.sc!==1?R1(e.sc):1]);}
+  const orbs=[];for(const o of ST.orbs){orbs.push([Math.round(o.x),Math.round(o.z)]);if(orbs.length>=60)break;}
+  const tg=[];for(const t of ST.telegraphs){tg.push([R1(t.x),R1(t.z),R1(t.r),t.kind|0,t.rIn?R1(t.rIn):0]);if(tg.length>=TELE_MAX)break;}
+  const bo=[];for(const b of ST.bolts){bo.push([R1(b.x),R1(b.z),b.k|0,b.face==null?0:R1(b.face)]);if(bo.length>=90)break;}
+  const eb=[];for(const b of ST.ebullets){eb.push([R1(b.x),R1(b.z),b.chill?1:0]);if(eb.length>=70)break;}
+  const bl=[];for(const pool of [bladeMeshes,bladeMeshes2])for(const m of pool)if(m.visible)bl.push([R1(m.position.x),R1(m.position.z)]);
+  const mn=[];for(const P of [ST,ST.p2])if(P.mines)for(const m of P.mines)mn.push([R1(m.x),R1(m.z)]);
+  const bm=[];for(const m of beamMeshes)if(m.visible)bm.push([R1(m.position.x),R1(m.position.z),R1(-m.rotation.y),R1(m.scale.x)]);
+  const hr=[];for(const h of ST.hearts)hr.push([R1(h.x),R1(h.z)]);
+  const fx=NET.fx.slice();NET.fx.length=0;
+  netSend({t:'state',p1:[R1(ST.px),R1(ST.pz),Math.round(ST.hp),ST.maxhp,ST.down?1:0],
+    p2:[R1(ST.p2.px),R1(ST.p2.pz),Math.round(ST.p2.hp),ST.p2.maxhp,ST.p2.down?1:0,(ST.p2.chillT>0||(ST.p2.slowMul||1)<1)?1:0,R1(ST.p2.speed||17)],
+    en,orbs,tg,bo,eb,bl,mn,bm,hr,fx,w:ST.wave,l:ST.wlevel,b:ST.isBossWave?1:0,bi:BIOME_ORDER.indexOf(ST.biome),tm:Math.floor(ST.t),
     wt:ST.waveState==='break'&&ST.wave>0?Math.ceil(Math.max(0,ST.waveTimer)):0,
-    p2l:ST.p2.level,p2x:ST.p2.xpNext?Math.round(100*ST.p2.xp/ST.p2.xpNext):0,
+    p2l:ST.p2.level,p2x:ST.p2.xpNext?Math.round(100*ST.p2.xp/ST.p2.xpNext):0,p2w:ST.p2.weapons,
     bf:ST.bossE&&!ST.bossE.dead?Math.round(255*ST.bossE.hp/ST.bossE.maxhp):-1,bn:ST.bossE&&!ST.bossE.dead?ENEMY_TYPES.indexOf(ST.bossE.type):-1,
     over:ST.over?1:0});}
 /* guest per-frame */
 const _gmid=new THREE.Vector3();
 function guestFrame(dt){const st=NET.state;
-  if(coopLU.open){idleT+=dt;stepParticles(dt);return;} // frozen while someone picks an upgrade
-  // own input → predict + send
+  if(coopLU.open){idleT+=dt;stepParticles(dt);fxFrameEnd();return;} // frozen while someone picks an upgrade
+  // own input → predict + send (at the speed the host says we have, inside the same circle the host enforces)
   let mx=(keys['d']||keys['arrowright']?1:0)-(keys['a']||keys['arrowleft']?1:0);
   let mz=(keys['s']||keys['arrowdown']?1:0)-(keys['w']||keys['arrowup']?1:0);
   if(joyOn){mx=jvx;mz=jvy;}const ml=Math.hypot(mx,mz);if(ml>1){mx/=ml;mz/=ml;}
-  GUEST.px=clamp(GUEST.px+mx*17*dt,-ARENA*1.35,ARENA*1.35);GUEST.pz=clamp(GUEST.pz+mz*17*dt,-ARENA*1.35,ARENA*1.35);
+  const gsp=(st&&st.p2&&st.p2[6])||17;const slowed=st&&st.p2&&st.p2[5];
+  if(!(st&&st.p2&&st.p2[4])){GUEST.px+=mx*gsp*(slowed?.6:1)*dt;GUEST.pz+=mz*gsp*(slowed?.6:1)*dt;const rg=Math.hypot(GUEST.px,GUEST.pz),HD=ARENA*1.35;if(rg>HD){GUEST.px*=HD/rg;GUEST.pz*=HD/rg;}}
   NET.inAcc+=dt;if(NET.inAcc>=0.05){NET.inAcc=0;netSend({t:'input',mx:+mx.toFixed(2),mz:+mz.toFixed(2)});}
   if(st){
     player.position.set(st.p1[0],1.4+Math.sin(idleT*3)*.1,st.p1[1]);player.visible=st.p1[4]?false:true;
@@ -2142,44 +2672,74 @@ function guestFrame(dt){const st=NET.state;
     pmark.visible=!st.p1[4];pmark.position.set(st.p1[0],.06,st.p1[1]);p2mark.visible=!st.p2[4];p2mark.position.set(GUEST.px,.06,GUEST.pz);
     p2core.rotation.y+=dt;p2light.position.set(GUEST.px,2.6,GUEST.pz);
     pcore.rotation.y+=dt;emberLight.position.set(st.p1[0],2.6,st.p1[1]);
-    guestSyncEnemies(st.en,dt);guestSyncOrbs(st.orbs||[]);guestSyncTele(st.tg||[]);guestSyncBolts(st.bo||[]);guestSyncEbullets(st.eb||[]);guestHud(st);
+    if(st.bi!=null&&st.bi!==GUEST.biome){const id=BIOME_ORDER[st.bi]||'ember';const first=GUEST.biome==null;GUEST.biome=st.bi;setBiome(id,!first);
+      if(!first){const b=BIOMES[id];setTimeout(()=>bannerMsg(b.name,'Biome '+(st.bi+1)+' · '+b.tag,'biome'),600);sfx.biome(st.bi);}}
+    stepBiome(dt);stepAmbient(dt,GUEST.px,GUEST.pz);
+    guestSyncEnemies(st.en,dt);guestSyncOrbs(st.orbs||[]);guestSyncTele(st.tg||[]);guestSyncBolts(st.bo||[]);guestSyncEbullets(st.eb||[]);
+    guestSyncPool(bladeMeshes,st.bl||[],1.3);guestSyncPool(mineMeshes,st.mn||[],.45);guestSyncPool(heartMeshes,st.hr||[],.9);guestSyncBeams(st.bm||[]);guestFx(st.fx||[]);
+    for(const m of bladeMeshes)m.rotation.x+=dt*6;for(const m of mineMeshes)if(m.visible)m.rotation.y+=dt*2.5;
+    guestHud(st);
     _gmid.set(GUEST.px,0,GUEST.pz).add(CAM_OFF); // guest camera follows the guest's own character
     camera.position.lerp(_gmid,Math.min(1,6*dt));camera.lookAt(GUEST.px,1,GUEST.pz);
     if(st.over&&!GUEST.overShown){GUEST.overShown=true;
       $('goEyebrow').textContent='Duo run';$('goTitle').innerHTML='The swarm <span class="e">wins this time</span>';
-      $('goStats').innerHTML='<div class="c"><div class="k">Wave</div><div class="v num">'+st.w+'</div></div><div class="c"><div class="k">Level</div><div class="v num">'+st.l+'</div></div>';
-      $('goBest').classList.add('hidden');$('btnRetry').textContent='Back to Lobby';setState('over');}
+      $('goStats').innerHTML='<div class="c"><div class="k">Wave</div><div class="v num">'+(st.w|0)+'</div></div><div class="c"><div class="k">Level</div><div class="v num">'+(st.l|0)+'</div></div>';
+      $('goBest').classList.add('hidden');$('btnRetry').textContent='Home';setState('over');}
   }
-  idleT+=dt;stepParticles(dt);}
+  if(GUEST.flash>0){GUEST.flash=Math.max(0,GUEST.flash-dt*3.2);flashEl.style.opacity=(GUEST.flash*.85).toFixed(3);}
+  idleT+=dt;stepParticles(dt);stepLashFx(dt);stepBlasts(dt);fxFrameEnd();}
 function guestSyncEnemies(en,dt){const seen=new Set();
-  for(const a of en){const id=a[0],type=ENEMY_TYPES[a[1]];seen.add(id);let ge=GUEST.enemies.get(id);
-    if(!ge){const g=take(enemyPool[type]);if(!g)continue;if(g.userData.hpbar)g.userData.hpbar.visible=true;ge={g,type,x:a[2],z:a[3],tx:a[2],tz:a[3],lx:a[2],lz:a[3]};GUEST.enemies.set(id,ge);}
-    ge.tx=a[2];ge.tz=a[3];ge.hpf=a[4]/255;}
-  for(const [id,ge] of GUEST.enemies){if(!seen.has(id)){ge.g.visible=false;if(ge.g.userData.hpbar)ge.g.userData.hpbar.visible=false;GUEST.enemies.delete(id);}}
+  for(const a of en){const id=a[0],type=ENEMY_TYPES[a[1]];if(!enemyPool[type])continue;seen.add(id);let ge=GUEST.enemies.get(id);
+    if(!ge){const g=takeEnemy(enemyPool[type]);if(!g)continue;if(g.userData.hpbar)g.userData.hpbar.visible=true;if(g.userData.model)g.userData.model.visible=true;ge={g,type,x:a[2],z:a[3],tx:a[2],tz:a[3],lx:a[2],lz:a[3]};GUEST.enemies.set(id,ge);}
+    ge.tx=a[2];ge.tz=a[3];ge.hpf=a[4]/255;ge.sc=a[5]||1;}
+  for(const [id,ge] of GUEST.enemies){if(!seen.has(id)){releaseEnemy(ge.g);GUEST.enemies.delete(id);}}
   for(const [id,ge] of GUEST.enemies){ge.x+=(ge.tx-ge.x)*Math.min(1,12*dt);ge.z+=(ge.tz-ge.z)*Math.min(1,12*dt);
-    const g=ge.g,ud=g.userData,mdx=ge.tx-ge.lx,mdz=ge.tz-ge.lz;
+    const g=ge.g,ud=g.userData,mdx=ge.tx-ge.lx,mdz=ge.tz-ge.lz;g.scale.setScalar(ge.sc);
     if(Math.abs(mdx)+Math.abs(mdz)>0.008)g.rotation.set(0,Math.atan2(mdx,mdz)+((MODELINFO[ge.type]&&MODELINFO[ge.type].faceOff)||0),0);
-    g.position.set(ge.x,0,ge.z);if(ud.mixer)ud.mixer.update(dt*0.9);ge.lx=ge.x;ge.lz=ge.z;
-    const hb=ud.hpbar;if(hb){const mi=MODELINFO[ge.type];hb.position.set(ge.x,mi?mi.headY:2.5,ge.z);hb.quaternion.copy(camera.quaternion);
+    g.position.set(ge.x,ud.model?0:ETYPE[ge.type].y*ge.sc,ge.z);if(ud.mixer)ud.mixer.update(dt*0.9);ge.lx=ge.x;ge.lz=ge.z;
+    const hb=ud.hpbar;if(hb){const mi=MODELINFO[ge.type];hb.position.set(ge.x,(mi?mi.headY:2.5)*ge.sc,ge.z);hb.quaternion.copy(camera.quaternion);
       const fill=hb.userData.fill,w=hb.userData.w,frac=ge.hpf==null?1:ge.hpf;fill.scale.x=Math.max(.0001,w*frac);fill.position.x=-(w*(1-frac))/2;}}}
 function guestSyncOrbs(orbs){for(let i=0;i<orbMeshes.length;i++){if(i<orbs.length){orbMeshes[i].visible=true;orbMeshes[i].position.set(orbs[i][0],.8,orbs[i][1]);orbMeshes[i].rotation.y+=.05;}else orbMeshes[i].visible=false;}}
-function guestSyncBolts(bo){for(let i=0;i<boltMeshes.length;i++){if(i<bo.length){boltMeshes[i].visible=true;boltMeshes[i].position.set(bo[i][0],1.2,bo[i][1]);}else boltMeshes[i].visible=false;}}
-function guestSyncEbullets(eb){for(let i=0;i<ebulletMeshes.length;i++){if(i<eb.length){ebulletMeshes[i].visible=true;ebulletMeshes[i].position.set(eb[i][0],1.1,eb[i][1]);}else ebulletMeshes[i].visible=false;}}
-function guestSyncTele(tg){for(let i=0;i<teleMeshes.length;i++){if(i<tg.length){const t=tg[i];teleMeshes[i].position.set(t[0],.07,t[1]);teleMeshes[i].scale.set(t[2],t[2],t[2]);teleMeshes[i].material.color.setHex(t[3]?0x7CFF3D:0xFF4F66);teleMeshes[i].material.opacity=.5;}else teleMeshes[i].material.opacity=0;}}
+function guestSyncPool(pool,list,y){for(let i=0;i<pool.length;i++){if(i<list.length){pool[i].visible=true;pool[i].position.set(list[i][0],y,list[i][1]);}else pool[i].visible=false;}}
+// projectiles by kind: 0 bolt, 1 spark, 2 lance (so the guest sees the real weapon, not a generic ball)
+function guestSyncBolts(bo){let nb=0,ns=0,nl=0;
+  for(const b of bo){const k=b[2]|0;const pool=k===1?sparkMeshes:k===2?lanceMeshes:boltMeshes;const i=k===1?ns++:k===2?nl++:nb++;if(i>=pool.length)continue;
+    const m=pool[i];m.visible=true;m.position.set(b[0],1.2,b[1]);if(k===2)m.rotation.set(0,b[3]||0,0);}
+  for(let i=nb;i<boltMeshes.length;i++)boltMeshes[i].visible=false;for(let i=ns;i<sparkMeshes.length;i++)sparkMeshes[i].visible=false;for(let i=nl;i<lanceMeshes.length;i++)lanceMeshes[i].visible=false;}
+function guestSyncEbullets(eb){for(let i=0;i<ebulletMeshes.length;i++){if(i<eb.length){const m=ebulletMeshes[i];m.visible=true;m.position.set(eb[i][0],1.1,eb[i][1]);m.scale.setScalar(eb[i][2]?1.6:1);}else ebulletMeshes[i].visible=false;}}
+function guestSyncBeams(bm){for(let i=0;i<beamMeshes.length;i++){const m=beamMeshes[i];if(i<bm.length){m.visible=true;m.position.set(bm[i][0],1.15,bm[i][1]);m.rotation.set(0,-bm[i][2],0);m.scale.set(bm[i][3],1,1);}else m.visible=false;}}
+// guest telegraphs: the same disc/annulus meshes, coloured by kind, so danger reads identically on both screens
+function guestSyncTele(tg){let used=0;const ring=[];
+  for(const m of teleMeshes){m.userData.busy=false;m.visible=false;m.material.opacity=0;}
+  for(const t of tg){const isRing=t[3]===5&&t[4]>0;const m=getTeleMesh(isRing,isRing?t[4]/t[2]:0);if(!m)break;
+    m.position.set(t[0],.07,t[1]);m.scale.set(t[2],t[2],1);m.material.color.setHex(TELE_COL[t[3]|0]||0xFF4F66);m.material.opacity=.5;used++;}}
+// one-shot effects: [0 nova x z r] [1 lash x z base arc range] [2 blast x z r]
+function guestFx(fx){for(const f of fx){if(!Array.isArray(f))continue;const k=f[0]|0;
+  if(k===0){blastFx(f[1],f[2],f[3],0xFFB13D);sfx.nova();}
+  else if(k===1){lashFx(f[1],f[2],f[3],f[4],f[5]);sfx.lash();}
+  else if(k===2){blastFx(f[1],f[2],f[3],0xFFB13D);spawnParts(f[1],.8,f[2],0xFF8A2E,12);sfx.mine();}}}
 function guestHud(st){const mh=st.p2[3]||100,hp=st.p2[2];
-  $('hpbar').firstElementChild.style.width=(100*clamp(hp/mh,0,1))+'%';$('hptext').textContent=Math.max(0,Math.ceil(hp))+' / '+mh;
-  $('xpbar').firstElementChild.style.width=(st.p2x||0)+'%';$('lvlbadge').textContent=st.p2l||1;
-  $('waveInfo').textContent='LV '+st.l+' · WAVE '+st.w+(st.b?' · BOSS':(st.wt?' · NEXT IN '+st.wt+'s':''))+' · CO-OP';
-  $('val-kills').textContent='CO-OP';$('val-ember').textContent=st.p1[4]?'P1 DOWN':'';
-  if(st.bf>=0){$('bossbar').classList.remove('hidden');const bt=ENEMY_TYPES[st.bn];$('bossName').textContent=(ETYPE[bt]?ETYPE[bt].name:'BOSS').toUpperCase();$('bossTier').textContent='★'.repeat(TIER[bt]||3);$('bossbar').querySelector('.bb-bar>span').style.width=(100*st.bf/255)+'%';}else $('bossbar').classList.add('hidden');}
+  // damage feedback the host's sim can't send: flash + sound when our HP drops, toast when downed
+  if(GUEST.lastHp!=null&&hp<GUEST.lastHp-0.5){GUEST.flash=1;sfx.hurt();spawnParts(GUEST.px,1.2,GUEST.pz,0xFF4F66,8);dmgNumber(GUEST.px,2.6,GUEST.pz,'-'+Math.round(GUEST.lastHp-hp),'player');}
+  GUEST.lastHp=hp;
+  if(st.p2[4]&&!GUEST.wasDown){toast('You are down','Your partner can revive you by clearing the wave','teal');}GUEST.wasDown=!!st.p2[4];
+  coldGlowEl.style.opacity=st.p2[5]?'0.6':'0';
+  setW('hpbar',100*clamp(hp/mh,0,1));setTxt('hptext',Math.max(0,Math.ceil(hp))+' / '+mh);
+  setW('xpbar',st.p2x||0);setTxt('lvlbadge',String(st.p2l||1));setTxt('timer',fmtTime(st.tm||0));
+  if(st.p2w){const key=JSON.stringify(st.p2w);if(GUEST.chipKey!==key){GUEST.chipKey=key;const el=$('chips');el.innerHTML='';for(const id in st.p2w){if(!WEAPONS[id])continue;const s=document.createElement('span');s.className='chip';s.innerHTML=WEAPONS[id].name+' <b>'+(st.p2w[id]|0)+'</b>';el.appendChild(s);}}}
+  setTxt('waveInfo','LV '+st.l+' · WAVE '+st.w+(st.b?' · BOSS':(st.wt?' · NEXT IN '+st.wt+'s':''))+' · CO-OP');
+  setTxt('val-kills','CO-OP');setTxt('val-ember',st.p1[4]?'P1 DOWN':'');
+  if(st.bf>=0){$('bossbar').classList.remove('hidden');const bt=ENEMY_TYPES[st.bn];$('bossName').textContent=(ETYPE[bt]?ETYPE[bt].name:'BOSS').toUpperCase();$('bossTier').textContent='★'.repeat(TIER[bt]||3);setW('bossbarFill',100*st.bf/255);}else $('bossbar').classList.add('hidden');}
+function updateDamageNumbersGuest(dt){updateDamageNumbers(dt);}
 
 /* ============ main loop ============ */
 let last=performance.now();
+const RENDER_STATES=new Set(['run','home','levelup','pause','over']); // menus fully cover the canvas — don't burn GPU behind them
 function loop(now){requestAnimationFrame(loop);let dt=(now-last)/1000;last=now;if(dt>.05)dt=.05;
   if(state==='run'&&NET.active&&NET.role==='guest')guestFrame(dt);
   else if(state==='run'&&ST&&!ST.over)update(dt);
   else if(state==='home')idleUpdate(dt);
-  renderer.render(scene,camera);}
+  if(RENDER_STATES.has(state))renderer.render(scene,camera);}
 requestAnimationFrame(loop);
 
 /* PWA */
@@ -2192,16 +2752,28 @@ const _ll=$('loading').querySelector('.l');if(_ll)_ll.textContent='SUMMONING MON
 function finishBoot(){initEnemyPools();checkAchievements();$('loading').classList.add('hidden');setState('home');
   verifyAccount();
   if(dailyAvailable()&&SAVE.bestTime>0)setTimeout(openDaily,500);}
-loadModels().then(finishBoot).catch(e=>{console.error('boot load error',e);finishBoot();});
+// wait for the label font too, so name tags aren't baked in the fallback face
+const fontsReady=(document.fonts&&document.fonts.load)?Promise.race([document.fonts.load('700 30px Barlow'),new Promise(r=>setTimeout(r,2500))]).catch(()=>{}):Promise.resolve();
+Promise.all([loadModels(),fontsReady]).then(finishBoot).catch(e=>{console.error('boot load error',e);finishBoot();});
 
-/* test hooks */
+/* test hooks — drive the sim headlessly (see test/smoke.mjs). Keep these. */
 window.__ST=()=>ST;window.__state=()=>state;window.__startRun=startRun;window.__update=update;window.__keys=keys;window.__SAVE=()=>SAVE;window.__setState=setState;
-window.__spawnBoss=(t)=>{const b=spawnEnemy(t);if(b){b.isWaveBoss=true;b.atkSeq=0;ST.bossE=b;showBossBar(b);}return b?b.type:null;};
+window.__spawnBoss=(t)=>{const b=spawnEnemy(t);if(b){initWaveBoss(b);showBossBar(b);}return b?b.type:null;};
 window.__bossAttack=()=>{if(ST.bossE)bossAttack(ST.bossE);return ST.bossE&&ST.bossE.type;};
 window.__NET=()=>NET;window.__coopLU=()=>coopLU;window.__netMsg=netMsg;window.__gainXp=gainXp;window.__tryCoopLU=tryCoopLU;window.__netBroadcast=netBroadcast;
-window.__fakeCoopHost=(sent)=>{ST.coop=true;ST.isHost=true;ST.luLock=false;coopLU.open=false;coopLU.who=0;
-  ST.p2={px:6,pz:0,hp:100,maxhp:100,down:false,timers:{bolt:0,nova:0,scatter:0,lash:0},level:1,xp:0,xpNext:12,pendingLU:0,weapons:{bolt:1},passives:{}};applyPassivesP2();
+window.__fakeCoopHost=(sent)=>{ST.coop=true;ST.wasCoop=true;ST.isHost=true;ST.luLock=false;coopLU.open=false;coopLU.who=0;
+  ST.p2=newP2('bolt');applyPassivesP2();
   NET.active=true;NET.role='host';NET.ws={readyState:1,send:o=>sent.push(JSON.parse(o))};return true;};
+window.__spawn=(t,x,z,o)=>{const e=spawnEnemy(t,x,z,o);return e?e.id:null;};
+window.__hurtEnemy=hurtEnemy;window.__killEnemy=killEnemy;window.__hurtPlayer=hurtPlayer;
+window.__setBiome=(id,anim)=>{if(ST)ST.biome=id;setBiome(id,!!anim);return BT.cur;};window.__biome=()=>({cur:BT.cur,to:BT.to,st:ST?ST.biome:null});
+window.__hazard=k=>{if(HAZARDS[k]){HAZARDS[k].run();return true;}return false;};
+window.__giveWeapon=(id,lv,who)=>{const P=who===2?ST.p2:ST;P.weapons[id]=lv||1;if(who!==2)buildChips();return P.weapons;};
+window.__tables=()=>({ETYPE,BIOMES,BIOME_ORDER,WEAPONS,PASSIVES,CAMPAIGN,TIER,MODEL_MAP,MODELINFO,BEHAVIORS:Object.keys(BEHAVIORS),BOSS_KITS:Object.keys(BOSS_KITS),HAZARDS:Object.keys(HAZARDS),MAXE});
+window.__perf=()=>({enemies:ST?ST.enemies.length:0,bolts:ST?ST.bolts.length:0,tele:ST?ST.telegraphs.length:0,teleMeshes:teleMeshes.length,calls:renderer.info.render.calls,tris:renderer.info.render.triangles,geoms:renderer.info.memory.geometries,tex:renderer.info.memory.textures});
+window.__guestState=()=>GUEST;window.__guestFrame=guestFrame;
+window.__pools=()=>{const o={};for(const t in enemyPool)o[t]=enemyPool[t].filter(g=>!g.userData.busy).length+'/'+enemyPool[t].length;return o;};
+window.__models=()=>({loaded:Object.keys(MODELS),info:Object.keys(MODELINFO)});
 </script>
 </body>
 </html>
