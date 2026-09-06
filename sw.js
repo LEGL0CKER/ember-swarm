@@ -1,5 +1,5 @@
 // Ember Swarm service worker — offline support + installable app.
-const CACHE = 'ember-swarm-v3';
+const CACHE = 'ember-swarm-v4';
 const CORE = ['/', '/index.html', '/vendor/three.module.js', '/manifest.json', '/icon.svg'];
 
 self.addEventListener('install', e => {
@@ -21,17 +21,21 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
-  if (url.pathname.startsWith('/vendor/')) {
+  // live data: never intercept (a cached leaderboard would masquerade as "Global" offline)
+  if (url.pathname.startsWith('/api/')) return;
+
+  // cache-first for the immutable engine, models and fonts — only ever store successful responses
+  if (/^\/(vendor|models|fonts)\//.test(url.pathname)) {
     e.respondWith(caches.match(req).then(hit => hit || fetch(req).then(res => {
-      const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); return res;
+      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {}); }
+      return res;
     })));
     return;
   }
 
   e.respondWith(
     fetch(req).then(res => {
-      const copy = res.clone();
-      caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {}); }
       return res;
     }).catch(() => caches.match(req).then(hit => hit || caches.match('/index.html')))
   );
