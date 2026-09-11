@@ -39,6 +39,8 @@
   #boundGlow{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:6;
     background:radial-gradient(120% 100% at 50% 50%,transparent 40%,rgba(255,60,80,.9) 100%)}
   #boundWarn{position:absolute;top:24%;left:0;right:0;text-align:center;display:none}
+  #bossArrow{position:absolute;left:0;top:0;font-size:34px;line-height:1;color:#FF3B57;opacity:0;pointer-events:none;
+    text-shadow:0 0 10px rgba(255,59,87,.9),0 0 3px #000;transition:opacity .15s;will-change:transform,left,top;z-index:6}
   #boundWarn .bw{display:inline-block;font-family:var(--cond);font-weight:700;font-size:clamp(20px,4.6vw,34px);letter-spacing:.12em;text-transform:uppercase;color:#FF6376;text-shadow:0 2px 20px rgba(0,0,0,.7);animation:bwpulse .7s ease-in-out infinite}
   @keyframes bwpulse{0%,100%{opacity:.5}50%{opacity:1}}
   #tip{position:absolute;left:16px;top:calc(84px + var(--safe-t));max-width:min(280px,60vw);
@@ -401,6 +403,7 @@
   </div>
   <div id="centerBanner"><div class="cb-t">WAVE 1</div><div class="cb-s">Level 1</div></div>
   <div id="boundWarn"><div class="bw">⚠ Return to the arena</div></div>
+  <div id="bossArrow">➤</div>
   <div id="tip"><span class="tk">TIP</span><span id="tipText"></span></div>
   <div id="hint">P pause · M sound</div>
   <div id="bottomhud">
@@ -754,7 +757,7 @@ if(!SAVE.profile.av)SAVE.profile.av=randAvatar();
 if(!SAVE.token)SAVE.token=(Date.now().toString(36)+Math.random().toString(36).slice(2,10));
 SAVE.scores=SAVE.scores||[];
 SAVE.campaign=SAVE.campaign||{unlocked:1};
-SAVE.stats=Object.assign({totalKills:0,totalRuns:0,totalEmber:0,bestLevel:0},SAVE.stats||{});
+SAVE.stats=Object.assign({totalKills:0,totalRuns:0,totalEmber:0,bestLevel:0,bossKills:0,bestWave:0,duos:0},SAVE.stats||{});
 SAVE.achieved=SAVE.achieved||[];
 SAVE.missions=SAVE.missions||{day:-1,ids:[],prog:{},done:[]};
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(SAVE));}catch(e){}};
@@ -780,12 +783,16 @@ const SKINS=[
 ];
 const skinById=id=>SKINS.find(s=>s.id===id)||SKINS[0];
 const FORGE=[
-  {id:'vit',  name:'Iron Heart',desc:'+15 max health per rank',max:5,base:60},
-  {id:'pow',  name:'Hot Coals', desc:'+6% damage per rank',    max:5,base:75},
-  {id:'swift',name:'Windstep',  desc:'+4% move speed per rank',max:5,base:60},
-  {id:'mag',  name:'Lodestone', desc:'+18% pickup radius per rank',max:4,base:50},
-  {id:'greed',name:'Gilded Ash',desc:'+15% ember gained per rank',max:5,base:50},
-  {id:'mend', name:'Slow Mend', desc:'+0.3 health / sec per rank',max:4,base:90},
+  {id:'vit',  name:'Iron Heart',desc:'+15 max health per rank',max:8,base:60},
+  {id:'pow',  name:'Hot Coals', desc:'+6% damage per rank',    max:7,base:75},
+  {id:'swift',name:'Windstep',  desc:'+4% move speed per rank',max:6,base:60},
+  {id:'mag',  name:'Lodestone', desc:'+18% pickup radius per rank',max:6,base:50},
+  {id:'greed',name:'Gilded Ash',desc:'+15% ember gained per rank',max:8,base:50},
+  {id:'mend', name:'Slow Mend', desc:'+0.3 health / sec per rank',max:6,base:90},
+  {id:'edge', name:'Keen Edge', desc:'+2.5% critical chance per rank',max:5,base:85},
+  {id:'temper',name:'Tempered', desc:'-4% weapon cooldown per rank',max:5,base:100},
+  {id:'ward', name:'Emberward', desc:'-6% damage taken per rank (cap 60%)',max:5,base:110},
+  {id:'wisdom',name:'Old Embers',desc:'+10% XP from shards per rank',max:5,base:80},
 ];
 const fr=id=>SAVE.forge[id]|0;
 const forgeCost=f=>Math.floor(f.base*Math.pow(1.9,fr(f.id)));
@@ -801,6 +808,15 @@ const ACH=[
   {id:'vet',   name:'Veteran',     desc:'Complete 15 runs',           goal:15,   reward:80,  val:()=>SAVE.stats.totalRuns},
   {id:'curator',name:'Curator',    desc:'Own 5 character skins',      goal:5,    reward:80,  val:()=>SAVE.skinsOwned.length},
   {id:'gilded',name:'Gilded',      desc:'Bank 2000 ember from runs',  goal:2000, reward:100, val:()=>SAVE.stats.totalEmber},
+  {id:'boss1', name:"Warden's Bane",desc:'Defeat 10 bosses',          goal:10,   reward:90,  val:()=>SAVE.stats.bossKills||0},
+  {id:'boss2', name:'Titan Killer', desc:'Defeat 50 bosses',          goal:50,   reward:180, val:()=>SAVE.stats.bossKills||0},
+  {id:'wave1', name:'Wavecaller',   desc:'Reach wave 20 in a run',     goal:20,   reward:120, val:()=>SAVE.stats.bestWave||0},
+  {id:'wave2', name:'Unrelenting',  desc:'Reach wave 40 in a run',     goal:40,   reward:220, val:()=>SAVE.stats.bestWave||0},
+  {id:'slay3', name:'Extinction',   desc:'Defeat 10000 enemies total', goal:10000,reward:300, val:()=>SAVE.stats.totalKills},
+  {id:'ascend2',name:'Transcendent',desc:'Reach level 35 in a run',    goal:35,   reward:200, val:()=>SAVE.stats.bestLevel},
+  {id:'vet2',  name:'Hardened',     desc:'Complete 50 runs',           goal:50,   reward:200, val:()=>SAVE.stats.totalRuns},
+  {id:'gilded2',name:'Emberhoard',  desc:'Bank 10000 ember from runs', goal:10000,reward:250, val:()=>SAVE.stats.totalEmber},
+  {id:'duo',   name:'Better Together',desc:'Play a Duos co-op run',    goal:1,    reward:60,  val:()=>SAVE.stats.duos||0},
 ];
 function checkAchievements(){let changed=true,any=false;
   while(changed){changed=false;
@@ -1435,18 +1451,21 @@ function doLance(px,pz,s,mul,dirx,dirz,critC){const d=Math.hypot(dirx,dirz)||1;c
   ST.bolts.push({mesh:bm,k:2,x:px,z:pz,vx:dirx/d*s.speed,vz:dirz/d*s.speed,dmg:s.dmg,pierce:99,life:1.3,mul,critC,face:ang,hit:new Set()});
   spawnParts(px,1.2,pz,0x8FE9FF,4);sfx.lance();}
 // chain lightning: hop from `start` to the nearest un-hit enemy, up to s.jumps targets
-function doChain(start,px,pz,s,mul,critC){let cur=start;const hit=new Set();let fromx=px,fromz=pz,n=0;
-  while(cur&&n<s.jumps){hurtEnemy(cur,s.dmg,rollCrit(critC),mul);hit.add(cur.id);
-    // jagged bolt: zig-zag the segment with a sideways jitter so it reads as lightning
-    const seg=8,perpx=-(cur.z-fromz),perpz=(cur.x-fromx),pl=Math.hypot(perpx,perpz)||1;
+function chainBolt(pts){ // draw the jagged lightning through a list of [x,z] points (host + guest)
+  for(let p=0;p<pts.length-1;p++){const ax=pts[p][0],az=pts[p][1],bx=pts[p+1][0],bz=pts[p+1][1];
+    const seg=8,perpx=-(bz-az),perpz=(bx-ax),pl=Math.hypot(perpx,perpz)||1;
     for(let k=0;k<=seg;k++){const t=k/seg,j=(k>0&&k<seg)?(Math.random()-.5)*1.6:0;
-      spawnParts(fromx+(cur.x-fromx)*t+perpx/pl*j,1.25,fromz+(cur.z-fromz)*t+perpz/pl*j,k%2?0xDFF3FF:0x6FC0FF,1);}
-    spawnParts(cur.x,1.2,cur.z,0x9FD8FF,3);
-    fromx=cur.x;fromz=cur.z;n++;
+      spawnParts(ax+(bx-ax)*t+perpx/pl*j,1.25,az+(bz-az)*t+perpz/pl*j,k%2?0xDFF3FF:0x6FC0FF,1);}
+    spawnParts(bx,1.2,bz,0x9FD8FF,3);}
+  sfx.chain();}
+function doChain(start,px,pz,s,mul,critC){let cur=start;const hit=new Set();let fromx=px,fromz=pz,n=0;const pts=[[R1(px),R1(pz)]];
+  while(cur&&n<s.jumps){hurtEnemy(cur,s.dmg,rollCrit(critC),mul);hit.add(cur.id);
+    pts.push([R1(cur.x),R1(cur.z)]);fromx=cur.x;fromz=cur.z;n++;
     let next=null,bd=s.range*s.range;
     for(const e of ST.enemies){if(e.dead||e.invuln||hit.has(e.id))continue;const dx=e.x-fromx,dz=e.z-fromz,dd=dx*dx+dz*dz;if(dd<bd){bd=dd;next=e;}}
     cur=next;}
-  sfx.chain();}
+  chainBolt(pts);
+  if(pts.length>1){const flat=[3];for(const p of pts)flat.push(p[0],p[1]);netFx.apply(null,flat);}}
 // Brimstone Mine: P.mines holds live mines; the oldest is recycled when the cap is reached
 function doMine(P,s){P.mines=P.mines||[];while(P.mines.length>=s.max){const old=P.mines.shift();old.mesh.visible=false;}
   const m=take(mineMeshes);if(!m)return;m.position.set(P.px,.45,P.pz);P.mines.push({mesh:m,x:P.px,z:P.pz,r:s.radius,dmg:s.dmg,arm:.35});}
@@ -1485,7 +1504,7 @@ function newRun(mode,clevel){
   ST={t:0,kills:0,coins:0,level:1,xp:0,xpNext:12,hp:maxhp,maxhp,
     px:0,pz:0,iframe:0,orbitAng:0,shake:0,pendingLU:0,
     speed:17*(1+.04*fr('swift')),dmgMul:1+.06*fr('pow'),cdMul:1,magnet:6*(1+.18*fr('mag')),
-    regen:1+.3*fr('mend'),crit:.05,greed:1+.15*fr('greed'),hitFlash:0,bossN:0,outFrac:0,
+    regen:1+.3*fr('mend'),crit:.05,greed:1+.15*fr('greed'),armor:Math.min(.6,.06*fr('ward')),xpMul:1+.1*fr('wisdom'),hitFlash:0,bossN:0,outFrac:0,
     mode,clevel,won:false,coop:false,wasCoop:false,isHost:false,p2:null,down:false,enemyId:1,
     cmod:ce?ce.mod:null,cname:ce?ce.name:'',
     // biome state: which world we're in, how many times free play has looped the cycle, per-hazard cooldowns
@@ -1498,10 +1517,12 @@ function newRun(mode,clevel){
 function applyPassives(){const p=ST.passives;
   ST.speed=17*(1+.04*fr('swift'))*(1+.08*(p.speed|0));
   ST.dmgMul=(1+.06*fr('pow'))*(1+.10*(p.might|0));
-  ST.cdMul=Math.pow(.92,p.haste|0);
+  ST.cdMul=Math.pow(.92,p.haste|0)*Math.pow(.96,fr('temper'));
   ST.magnet=6*(1+.18*fr('mag'))*(1+.30*(p.magnet|0));
   ST.regen=1+.3*fr('mend')+.5*(p.regen|0);
-  ST.crit=.05+.06*(p.crit|0);
+  ST.crit=.05+.025*fr('edge')+.06*(p.crit|0);
+  ST.armor=Math.min(.6,.06*fr('ward'));   // Emberward: flat damage reduction
+  ST.xpMul=1+.1*fr('wisdom');             // Old Embers: more XP from shards
 }
 
 /* ============ enemies ============ */
@@ -1584,6 +1605,7 @@ function initWaveBoss(b){b.isWaveBoss=true;b.atkSeq=0;b.spd*=0.85;b.queue=[];b.e
 }
 function startWave(){
   ST.wave++;
+  if(ST.wave>(SAVE.stats.bestWave||0))SAVE.stats.bestWave=ST.wave; // for wave achievements
   if(ST.mode==='campaign'){ST.wlevel=ST.clevel;ST.isBossWave=(ST.wave===5);}   // 4 waves + boss = one level
   else{ST.wlevel=Math.floor((ST.wave-1)/5)+1;ST.loop=Math.floor((ST.wlevel-1)/BIOME_ORDER.length);ST.isBossWave=(ST.wave%5===0);}
   ST.waveState='active';
@@ -1807,6 +1829,7 @@ function dropHeart(x,z){const hm=take(heartMeshes);if(hm){hm.position.set(x,.9,z
 function killEnemy(e){
   if(e.dead)return;e.dead=true;releaseEnemy(e.g);ST.kills++;
   const boss=isBossType(e.type);
+  if(boss)SAVE.stats.bossKills=(SAVE.stats.bossKills||0)+1;
   const col=boss?0xFF2E4C:(e.type==='brute'?0xC43B8E:(biomeById(ST.biome).deathCol||0xFF6650));
   spawnParts(e.x,e.y,e.z,col,boss?44:(e.r>1.4?24:11));
   if(e.queue)e.queue.length=0;
@@ -1988,7 +2011,7 @@ function update(dt){
     player2.position.set(p.px,1.4+Math.sin(ST.t*3+1)*.12,p.pz);player2.visible=!p.down;p2core.rotation.y+=dt*1.2;p2shell.rotation.y-=dt*.8;p2light.position.set(p.px,2.6,p.pz);
     p2mark.visible=!p.down;p2mark.position.set(p.px,.06,p.pz);
     fireP2(dt);
-    NET.acc+=dt;if(NET.acc>=0.05){NET.acc=0;netBroadcast();}}
+    NET.acc+=dt;if(NET.acc>=0.033){NET.acc=0;netBroadcast();}} // ~30Hz: smoother partner + projectiles
   waveManager(dt);if(ST.over)return;
   if(hostMove)fire(dt);else hideBeams(1);
   updateTelegraphs(dt);hazardTick(dt);stepAmbient(dt,ST.px,ST.pz);
@@ -2117,6 +2140,7 @@ function aoeHit(x,z,r,dmg,rIn){rIn=rIn||0;const inZ=(px,pz)=>{const d2=(px-x)**2
   if(!ST.down&&ST.iframe<=0&&inZ(ST.px,ST.pz))hurtPlayer(dmg,1);
   if(ST.coop&&ST.p2&&!ST.p2.down&&(ST.p2.iframe||0)<=0&&inZ(ST.p2.px,ST.p2.pz))hurtPlayer(dmg,2);}
 function hurtPlayer(dmg,who){who=who||1;
+  dmg=dmg*(1-((who===2&&ST.p2)?(ST.p2.armor||0):(ST.armor||0))); // Emberward damage reduction
   if(ST.coop&&who===2){const p=ST.p2;const d=Math.max(1,Math.min(Math.round(dmg),Math.ceil(p.maxhp*0.45)));p.hp-=d;p.iframe=.7;
     spawnParts(p.px,1.2,p.pz,0xFF4F66,8);dmgNumber(p.px,2.6,p.pz,'-'+d,'player');
     if(p.hp<=0){p.hp=0;p.down=true;toast('Partner down','Clear the wave to revive them','teal');if(ST.down)endRun();}
@@ -2125,10 +2149,10 @@ function hurtPlayer(dmg,who){who=who||1;
   spawnParts(ST.px,1.2,ST.pz,0xFF4F66,8);dmgNumber(ST.px,2.6,ST.pz,'-'+d,'player');ST.hitFlash=1;
   if(ST.hp<=0){ST.hp=0; if(ST.coop){ST.down=true;toast('You are down','Your partner can revive you','teal');if(ST.p2.down)endRun();} else endRun();}}
 function gainXp(v,who){
-  if(who===2&&ST.p2){const p=ST.p2;p.xp=(p.xp||0)+v;sfx.gem();
+  if(who===2&&ST.p2){const p=ST.p2;p.xp=(p.xp||0)+v*(p.xpMul||1);sfx.gem();
     while(p.xp>=p.xpNext){p.xp-=p.xpNext;p.level++;p.xpNext=Math.floor(8+p.level*4+Math.pow(p.level,1.35));p.pendingLU=(p.pendingLU||0)+1;}
     tryCoopLU();return;}
-  ST.xp+=v;sfx.gem();
+  ST.xp+=v*(ST.xpMul||1);sfx.gem();
   while(ST.xp>=ST.xpNext){ST.xp-=ST.xpNext;ST.level++;ST.xpNext=Math.floor(8+ST.level*4+Math.pow(ST.level,1.35));ST.pendingLU++;}
   if(ST.coop){tryCoopLU();return;}
   if(ST.pendingLU>0&&state==='run'){ST.pendingLU--;openLevelUp();}}
@@ -2200,8 +2224,24 @@ function updateHud(){setW('hpbar',100*clamp(ST.hp/ST.maxhp,0,1));
   setTxt('val-kills',String(ST.kills));setTxt('val-ember',String(ST.coins));
   setTxt('waveInfo','LV '+ST.wlevel+' · WAVE '+ST.wave+(ST.isBossWave?' · BOSS':'')+(ST.waveState==='break'&&ST.wave>0?' · NEXT IN '+Math.ceil(Math.max(0,ST.waveTimer))+'s':''));
   if(ST.bossE&&!ST.bossE.dead)setW('bossbarFill',100*clamp(ST.bossE.hp/ST.bossE.maxhp,0,1));
+  const bA=ST.bossE&&!ST.bossE.dead;updateBossArrow(bA?ST.bossE.x:0,bA?ST.bossE.z:0,bA);
   const of=ST.outFrac||0;boundGlowEl.style.opacity=(of*0.62).toFixed(3);boundWarnEl.style.display=of>0.12?'block':'none';}
-const boundGlowEl=$('boundGlow'),boundWarnEl=$('boundWarn');
+const boundGlowEl=$('boundGlow'),boundWarnEl=$('boundWarn'),bossArrowEl=$('bossArrow');
+const _bv=new THREE.Vector3();
+// off-screen boss indicator: point an arrow at the screen edge toward the boss when it isn't in view
+function updateBossArrow(bx,bz,alive){
+  if(!alive){if(bossArrowEl._o!=='0'){bossArrowEl._o='0';bossArrowEl.style.opacity='0';}return;}
+  _bv.set(bx,1.5,bz).project(camera);let nx=_bv.x,ny=_bv.y;const behind=_bv.z>1;
+  if(behind){nx=-nx;ny=-ny;}
+  const onScreen=!behind&&Math.abs(nx)<0.94&&Math.abs(ny)<0.94;
+  if(onScreen){if(bossArrowEl._o!=='0'){bossArrowEl._o='0';bossArrowEl.style.opacity='0';}return;}
+  const ang=Math.atan2(ny,nx);                    // NDC space, y up
+  const ex=Math.cos(ang)*0.9, ey=Math.sin(ang)*0.86;   // push out to a screen-edge ellipse
+  const w=innerWidth,h=innerHeight;
+  const sx=(ex*0.5+0.5)*w, sy=(-ey*0.5+0.5)*h;    // NDC → screen pixels (flip y)
+  const deg=Math.atan2(-ey,ex)*180/Math.PI;       // CSS rotation (y down); glyph ➤ points +x
+  bossArrowEl.style.transform='translate(-50%,-50%) translate('+sx.toFixed(0)+'px,'+sy.toFixed(0)+'px) rotate('+deg.toFixed(0)+'deg)';
+  if(bossArrowEl._o!=='1'){bossArrowEl._o='1';bossArrowEl.style.opacity='1';}}
 $('bossbar').querySelector('.bb-bar').id='bossbarFill';
 /* ---- cycling tips (corner): general tips plus the current biome's own ---- */
 const TIPS=[
@@ -2235,6 +2275,7 @@ function hideBossBar(){$('bossbar').classList.add('hidden');}
 /* ============ screens ============ */
 const SCREENS=['home','skins','forge','awards','profile','ranks','levels','duos','account','feedback'];
 function setState(s){state=s;
+  if(s!=='run'&&typeof bossArrowEl!=='undefined'){bossArrowEl.style.opacity='0';bossArrowEl._o='0';}
   $('hud').style.display=(s==='run'||s==='levelup'||s==='pause')?'block':'none';
   for(const id of SCREENS)$(id).classList.toggle('hidden',s!==id);
   $('levelup').classList.toggle('hidden',s!=='levelup');
@@ -2563,7 +2604,7 @@ const ENEMY_TYPES=Object.keys(ETYPE);
 const NET={ws:null,role:null,code:null,active:false,peerHere:false,guestInput:{mx:0,mz:0,seq:0},state:null,acc:0,inAcc:0,fx:[],guestStart:'bolt'};
 // guest-side prediction state: seq = our input counter, hist = inputs not yet acknowledged by the host,
 // snapAt/snapDt = arrival time and spacing of the last two host snapshots (for interpolation)
-const GUEST={px:6,pz:0,enemies:new Map(),overShown:false,lastHp:null,wasDown:false,flash:0,biome:null,seq:0,hist:[],snapAt:0,snapDt:.066,ackSeq:-1};
+const GUEST={px:6,pz:0,enemies:new Map(),overShown:false,lastHp:null,wasDown:false,flash:0,biome:null,seq:0,hist:[],snapAt:0,snapDt:.066,ackSeq:-1,p1x:null,p1z:null,p1fx:0,p1fz:0,p1at:0};
 function netUrl(){return (location.protocol==='https:'?'wss://':'ws://')+location.host+'/duo';}
 function netReset(){if(NET.ws){try{NET.ws.onclose=null;NET.ws.close();}catch(e){}}NET.ws=null;NET.role=null;NET.code=null;NET.active=false;NET.peerHere=false;NET.state=null;NET.guestInput={mx:0,mz:0};NET.fx.length=0;}
 function netConnect(then){netReset();const ws=new WebSocket(netUrl());NET.ws=ws;
@@ -2621,7 +2662,7 @@ function nearestPlayer(x,z){ if(!ST.coop)return{x:ST.px,z:ST.pz,who:1};
 function newP2(start){return {px:6,pz:0,hp:100,maxhp:100,down:false,timers:{bolt:0,nova:0,scatter:0,lash:0,lance:0,chain:0,mine:0,beam:0},
     level:1,xp:0,xpNext:12,pendingLU:0,weapons:{[START_CHOICES.includes(start)?start:'bolt']:1},passives:{},iframe:0,
     slowMul:1,pullX:0,pullZ:0,chillT:0,faceX:1,faceZ:0,mines:[],beamAng:0,orbitAng:0};}
-function startCoopHost(){NET.active=true;NET.role='host';netSend({t:'start'});
+function startCoopHost(){NET.active=true;NET.role='host';SAVE.stats.duos=(SAVE.stats.duos||0)+1;persist();netSend({t:'start'});
   clearScene();newRun('free');applyPassives();buildChips();
   hideBossBar();clearTelegraphs();
   boundGlowEl.style.opacity='0';boundWarnEl.style.display='none';
@@ -2630,7 +2671,7 @@ function startCoopHost(){NET.active=true;NET.role='host';netSend({t:'start'});
   applyPassivesP2();
   player2.visible=true;camera.position.set(CAM_OFF.x,CAM_OFF.y,CAM_OFF.z);setState('run');showTip();}
 /* guest: render the host's world, control own player only */
-function startCoopGuest(){NET.active=true;NET.role='guest';GUEST.px=6;GUEST.pz=0;GUEST.overShown=false;GUEST.lastHp=null;GUEST.wasDown=false;GUEST.flash=0;GUEST.biome=null;GUEST.seq=0;GUEST.hist.length=0;GUEST.corr=null;GUEST.snapAt=performance.now();
+function startCoopGuest(){NET.active=true;NET.role='guest';SAVE.stats.duos=(SAVE.stats.duos||0)+1;checkAchievements();GUEST.px=6;GUEST.pz=0;GUEST.overShown=false;GUEST.lastHp=null;GUEST.wasDown=false;GUEST.flash=0;GUEST.biome=null;GUEST.seq=0;GUEST.hist.length=0;GUEST.corr=null;GUEST.snapAt=performance.now();GUEST.p1x=null;GUEST.p1z=null;GUEST.p1at=0;
   coopLU.open=false;coopLU.who=0;$('levelup').classList.add('hidden');$('coopwait').classList.add('hidden');$('dailyModal').classList.add('hidden');
   clearScene();GUEST.enemies.clear();
   $('chips').innerHTML='<span class="chip">'+WEAPONS[START_CHOICES.includes(SAVE.startWeapon)?SAVE.startWeapon:'bolt'].name+' <b>1</b></span>';$('timer').textContent='00:00';
@@ -2655,6 +2696,7 @@ function netBroadcast(){if(!NET.active||!ST||!ST.isHost)return;
     wt:ST.waveState==='break'&&ST.wave>0?Math.ceil(Math.max(0,ST.waveTimer)):0,
     p2l:ST.p2.level,p2x:ST.p2.xpNext?Math.round(100*ST.p2.xp/ST.p2.xpNext):0,p2w:ST.p2.weapons,
     bf:ST.bossE&&!ST.bossE.dead?Math.round(255*ST.bossE.hp/ST.bossE.maxhp):-1,bn:ST.bossE&&!ST.bossE.dead?ENEMY_TYPES.indexOf(ST.bossE.type):-1,
+    bx:ST.bossE&&!ST.bossE.dead?R1(ST.bossE.x):0,bz:ST.bossE&&!ST.bossE.dead?R1(ST.bossE.z):0,
     over:ST.over?1:0});}
 /* guest per-frame */
 const _gmid=new THREE.Vector3();
@@ -2677,14 +2719,18 @@ function guestFrame(dt){const st=NET.state;
   // client-side prediction: move immediately with our own input, remember the input so the host's
   // (older) authoritative position can be brought up to date by replaying what it hasn't seen yet
   if(!(st&&st.p2&&st.p2[4])){guestStep(GUEST,mx,mz,gsp*(slowed?.6:1),dt);GUEST.hist.push({s:GUEST.seq,mx,mz,dt});if(GUEST.hist.length>240)GUEST.hist.shift();}
-  NET.inAcc+=dt;if(NET.inAcc>=0.05){NET.inAcc=0;GUEST.seq++;netSend({t:'input',mx:+mx.toFixed(2),mz:+mz.toFixed(2),s:GUEST.seq});}
+  NET.inAcc+=dt;if(NET.inAcc>=0.033){NET.inAcc=0;GUEST.seq++;netSend({t:'input',mx:+mx.toFixed(2),mz:+mz.toFixed(2),s:GUEST.seq});} // ~30Hz input: less partner lag on the host
   if(st){
-    player.position.set(st.p1[0],1.4+Math.sin(idleT*3)*.1,st.p1[1]);player.visible=st.p1[4]?false:true;
+    // interpolate the host avatar across snapshots (snapping to 20-30Hz state made the partner look laggy)
+    if(GUEST.p1at!==GUEST.snapAt){GUEST.p1fx=GUEST.p1x==null?st.p1[0]:GUEST.p1x;GUEST.p1fz=GUEST.p1z==null?st.p1[1]:GUEST.p1z;GUEST.p1at=GUEST.snapAt;}
+    const pf=clamp((performance.now()-GUEST.snapAt)/1000/GUEST.snapDt,0,1.15);
+    GUEST.p1x=GUEST.p1fx+(st.p1[0]-GUEST.p1fx)*pf;GUEST.p1z=GUEST.p1fz+(st.p1[1]-GUEST.p1fz)*pf;
+    player.position.set(GUEST.p1x,1.4+Math.sin(idleT*3)*.1,GUEST.p1z);player.visible=st.p1[4]?false:true;
     if(GUEST.corr){GUEST.px+=GUEST.corr.x*Math.min(1,10*dt);GUEST.pz+=GUEST.corr.z*Math.min(1,10*dt);GUEST.corr.x*=Math.max(0,1-10*dt);GUEST.corr.z*=Math.max(0,1-10*dt);} // ease out the reconciliation error
     player2.position.set(GUEST.px,1.4+Math.sin(idleT*3+1)*.1,GUEST.pz);player2.visible=st.p2[4]?false:true;
-    pmark.visible=!st.p1[4];pmark.position.set(st.p1[0],.06,st.p1[1]);p2mark.visible=!st.p2[4];p2mark.position.set(GUEST.px,.06,GUEST.pz);
+    pmark.visible=!st.p1[4];pmark.position.set(GUEST.p1x,.06,GUEST.p1z);p2mark.visible=!st.p2[4];p2mark.position.set(GUEST.px,.06,GUEST.pz);
     p2core.rotation.y+=dt;p2light.position.set(GUEST.px,2.6,GUEST.pz);
-    pcore.rotation.y+=dt;emberLight.position.set(st.p1[0],2.6,st.p1[1]);
+    pcore.rotation.y+=dt;emberLight.position.set(GUEST.p1x,2.6,GUEST.p1z);
     if(st.bi!=null&&st.bi!==GUEST.biome){const id=BIOME_ORDER[st.bi]||'ember';const first=GUEST.biome==null;GUEST.biome=st.bi;setBiome(id,!first);
       if(!first){const b=BIOMES[id];setTimeout(()=>bannerMsg(b.name,'Biome '+(st.bi+1)+' · '+b.tag,'biome'),600);sfx.biome(st.bi);}}
     stepBiome(dt);stepAmbient(dt,GUEST.px,GUEST.pz);
@@ -2732,7 +2778,8 @@ function guestSyncTele(tg){let used=0;const ring=[];
 function guestFx(fx){for(const f of fx){if(!Array.isArray(f))continue;const k=f[0]|0;
   if(k===0){blastFx(f[1],f[2],f[3],0xFFB13D);sfx.nova();}
   else if(k===1){lashFx(f[1],f[2],f[3],f[4],f[5]);sfx.lash();}
-  else if(k===2){blastFx(f[1],f[2],f[3],0xFFB13D);spawnParts(f[1],.8,f[2],0xFF8A2E,12);sfx.mine();}}}
+  else if(k===2){blastFx(f[1],f[2],f[3],0xFFB13D);spawnParts(f[1],.8,f[2],0xFF8A2E,12);sfx.mine();}
+  else if(k===3){const pts=[];for(let i=1;i+1<f.length;i+=2)pts.push([f[i],f[i+1]]);if(pts.length>1)chainBolt(pts);}}}
 function guestHud(st){const mh=st.p2[3]||100,hp=st.p2[2];
   // damage feedback the host's sim can't send: flash + sound when our HP drops, toast when downed
   if(GUEST.lastHp!=null&&hp<GUEST.lastHp-0.5){GUEST.flash=1;sfx.hurt();spawnParts(GUEST.px,1.2,GUEST.pz,0xFF4F66,8);dmgNumber(GUEST.px,2.6,GUEST.pz,'-'+Math.round(GUEST.lastHp-hp),'player');}
@@ -2744,7 +2791,8 @@ function guestHud(st){const mh=st.p2[3]||100,hp=st.p2[2];
   if(st.p2w){const key=JSON.stringify(st.p2w);if(GUEST.chipKey!==key){GUEST.chipKey=key;const el=$('chips');el.innerHTML='';for(const id in st.p2w){if(!WEAPONS[id])continue;const s=document.createElement('span');s.className='chip';s.innerHTML=WEAPONS[id].name+' <b>'+(st.p2w[id]|0)+'</b>';el.appendChild(s);}}}
   setTxt('waveInfo','LV '+st.l+' · WAVE '+st.w+(st.b?' · BOSS':(st.wt?' · NEXT IN '+st.wt+'s':''))+' · CO-OP');
   setTxt('val-kills','CO-OP');setTxt('val-ember',st.p1[4]?'P1 DOWN':'');
-  if(st.bf>=0){$('bossbar').classList.remove('hidden');const bt=ENEMY_TYPES[st.bn];$('bossName').textContent=(ETYPE[bt]?ETYPE[bt].name:'BOSS').toUpperCase();$('bossTier').textContent='★'.repeat(TIER[bt]||3);setW('bossbarFill',100*st.bf/255);}else $('bossbar').classList.add('hidden');}
+  if(st.bf>=0){$('bossbar').classList.remove('hidden');const bt=ENEMY_TYPES[st.bn];$('bossName').textContent=(ETYPE[bt]?ETYPE[bt].name:'BOSS').toUpperCase();$('bossTier').textContent='★'.repeat(TIER[bt]||3);setW('bossbarFill',100*st.bf/255);}else $('bossbar').classList.add('hidden');
+  updateBossArrow(st.bx||0,st.bz||0,st.bf>=0);}
 function updateDamageNumbersGuest(dt){updateDamageNumbers(dt);}
 
 /* ============ main loop ============ */
